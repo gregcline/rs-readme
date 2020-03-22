@@ -7,3 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+tide = { git = "https://github.com/Licenser/tide", branch = "result-into-response" }
+surf = "1.0.3"
+serde = "1.0.105"
+serde_derive = "1.0.105"
+futures = "0.3.4"
+async-std = { version = "1.5.0", features = [ "attributes" ]}
