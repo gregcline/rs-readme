@@ -1,54 +1,64 @@
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate async_std;
 
-use surf;
-use tide::{Request, Response, Result, ResultExt, Server,};
+mod content_finder;
+mod markdown_converter;
+
+use tide;
+use tide::{middleware, Request, Response, Server};
 
 use std::env;
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::Path;
+use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug)]
-struct MarkdownRequest {
-    text: String,
-    mode: String,
-    context: String,
+use content_finder::{ContentFinder, Finder};
+use markdown_converter::{Converter, MarkdownConverter};
+
+struct State<M, C>
+where
+    M: markdown_converter::MarkdownConverter,
+    C: content_finder::ContentFinder,
+{
+    markdown_converter: M,
+    content_finder: C,
 }
 
-async fn find_readme(_req: Request<()>) -> Result {
-    let path = Path::new("README.md");
+async fn render_readme(req: Request<State<Converter, Finder>>) -> tide::Result {
+    let state = req.state();
 
-    let mut file = File::open(path).unwrap();
+    let contents = state
+        .content_finder
+        .content_for("README.md")
+        .map_err(|_| Response::new(404).body_string("Could not find README.md".to_string()))?;
 
-    let mut contents = String::new();
-    file.read_to_string(&mut contents).server_err()?;
-
-    let client = surf::Client::new();
-
-    let resp = client.post("https://api.github.com/markdown")
-        .body_json(&MarkdownRequest {
-            text: contents,
-            mode: "markdown".to_string(),
-            context: "".to_string(),
-        })
-        .server_err()?
-        .recv_string()
+    let resp = state
+        .markdown_converter
+        .convert_markdown(&contents)
         .await
-        .map_err(|_| Response::new(500))?;
+        .map_err(|_err| {
+            Response::new(500).body_string(format!(
+                "Could not convert the following markdown:\n {}",
+                &contents
+            ))
+        })?;
 
     Ok(Response::new(200).body_string(resp))
 }
 
 #[async_std::main]
 async fn main() -> std::result::Result<(), std::io::Error> {
-    let addr = format!("0.0.0.0:{}", env::var("PORT").unwrap_or_else(|_| "4000".to_string()));
+    pretty_env_logger::init();
+    let addr = format!(
+        "0.0.0.0:{}",
+        env::var("PORT").unwrap_or_else(|_| "4000".to_string())
+    );
 
-    println!("Listening on http://{}", addr).await;
+    let state = State {
+        markdown_converter: Converter::new("https://api.github.com".to_string()),
+        content_finder: Finder::new(PathBuf::from(".")),
+    };
 
-    let mut app = Server::new();
-    app.at("").get(find_readme);
+    let mut app = Server::with_state(state);
+    app.middleware(middleware::RequestLogger::new());
+    app.at("").get(render_readme);
     app.listen(addr).await
 }
