@@ -48,15 +48,14 @@ impl ContentFinder for Finder {
         })?;
 
         let mut contents = String::new();
-        file.read_to_string(&mut contents)
-            .map_err(|err| {
-                error!(
-                    "Could not read contents of {}:\n{:#?}",
-                    path.to_string_lossy(),
-                    err
-                );
-                ContentError::CouldNotFetch
-            })?;
+        file.read_to_string(&mut contents).map_err(|err| {
+            error!(
+                "Could not read contents of {}:\n{:#?}",
+                path.to_string_lossy(),
+                err
+            );
+            ContentError::CouldNotFetch
+        })?;
 
         Ok(contents)
     }

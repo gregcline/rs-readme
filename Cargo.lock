@@ -668,6 +668,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-service-mock"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "893e67bcfcd552717ddfcc3af17fa5397d39a2b1a64a8266271efff619d6af45"
+dependencies = [
+ "futures 0.3.4",
+ "http-service",
+]
+
+[[package]]
 name = "httparse"
 version = "1.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1249,7 +1259,11 @@ dependencies = [
  "async-trait",
  "futures 0.3.4",
  "horrorshow",
+ "http",
+ "http-service",
+ "http-service-mock",
  "log",
+ "mime",
  "mockito",
  "pretty_env_logger",
  "serde",
