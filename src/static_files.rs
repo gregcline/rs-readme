@@ -1,6 +1,8 @@
 use super::{content_finder::ContentFinder, markdown_converter::MarkdownConverter, State};
 use tide::{Request, Response};
 
+// This will bundle the necessary files in the final binary so we don't have to worry about
+// portability.
 const OCTICON_CSS: &str = include_str!("../static/octicons/octicons.css");
 const OCTICON_EOT: &[u8] = include_bytes!("../static/octicons/octicons.eot");
 const OCTICON_SVG: &str = include_str!("../static/octicons/octicons.svg");
@@ -8,6 +10,7 @@ const OCTICON_TTF: &[u8] = include_bytes!("../static/octicons/octicons.ttf");
 const OCTICON_WOFF: &[u8] = include_bytes!("../static/octicons/octicons.woff");
 const OCTICON_WOFF2: &[u8] = include_bytes!("../static/octicons/octicons.woff2");
 
+/// The endpoint to return the relevant static file.
 pub async fn static_content(
     req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
 ) -> tide::Result {
