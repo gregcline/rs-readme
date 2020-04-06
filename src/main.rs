@@ -5,11 +5,12 @@ extern crate horrorshow;
 
 mod content_finder;
 mod markdown_converter;
+mod static_files;
 
+use horrorshow::helper::doctype;
+use horrorshow::prelude::*;
 use tide;
 use tide::{middleware, Request, Response, Server};
-use horrorshow::prelude::*;
-use horrorshow::helper::doctype;
 
 use std::env;
 use std::path::PathBuf;
@@ -17,7 +18,7 @@ use std::path::PathBuf;
 use content_finder::{ContentFinder, Finder};
 use markdown_converter::{Converter, MarkdownConverter};
 
-struct State<M, C>
+pub struct State<M, C>
 where
     M: markdown_converter::MarkdownConverter,
     C: content_finder::ContentFinder,
@@ -27,17 +28,24 @@ where
 }
 
 fn wrap_converted(converted: String) -> String {
-    format!("{}", html! {
-        : doctype::HTML;
-        html {
-            head {
-                title : "readme-rs";
-            }
-            body {
-                : Raw(&converted);
+    format!(
+        "{}",
+        html! {
+            : doctype::HTML;
+            html {
+                head {
+                    link(rel="stylesheet", href="/static/octicons/octicons.css");
+                    link(rel="stylesheet", href="https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css");
+                    link(rel="stylesheet", href="https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css");
+                    link(rel="stylesheet", href="https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css");
+                    title : "readme-rs";
+                }
+                body {
+                    : Raw(&converted);
+                }
             }
         }
-    })
+    )
 }
 
 async fn render_readme(
@@ -63,7 +71,9 @@ async fn render_readme(
 
     let resp = wrap_converted(converted);
 
-    Ok(Response::new(200).body_string(resp).set_mime(mime::TEXT_HTML))
+    Ok(Response::new(200)
+        .body_string(resp)
+        .set_mime(mime::TEXT_HTML))
 }
 
 fn build_app(
@@ -75,6 +85,7 @@ fn build_app(
     let mut app = Server::with_state(state);
     app.middleware(middleware::RequestLogger::new());
     app.at("").get(render_readme);
+    app.at("/static/*").get(static_files::static_content);
 
     app
 }
@@ -100,12 +111,12 @@ async fn main() -> std::result::Result<(), std::io::Error> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use async_std::io::ReadExt;
     use async_trait::async_trait;
     use content_finder::ContentError;
     use http_service::Body;
     use http_service_mock::make_server;
     use markdown_converter::MarkdownError;
-    use async_std::io::ReadExt;
 
     struct MockConverter;
 
@@ -126,6 +137,7 @@ mod test {
 
     #[async_std::test]
     async fn index_wraps_in_html() {
+        // Setup
         let state = State {
             markdown_converter: MockConverter,
             content_finder: MockFinder,
@@ -133,17 +145,24 @@ mod test {
         let app = build_app(state);
         let mut server = make_server(app.into_http_service()).unwrap();
 
+        // Request
         let req = http::Request::get("/").body(Body::empty()).unwrap();
         let res = server.simulate(req).unwrap();
-        let status = res.status();
-        let mut body = String::with_capacity(17);
-        res.into_body().read_to_string(&mut body).await.unwrap();
 
+        // Assert
+        let status = res.status();
         assert_eq!(status.as_u16(), 200);
+
+        let mut body = String::with_capacity(1);
+        res.into_body().read_to_string(&mut body).await.unwrap();
         let expected_body = "\
 <!DOCTYPE html>\
 <html>\
   <head>\
+  <link rel=\"stylesheet\" href=\"/static/octicons/octicons.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
     <title>readme-rs</title>\
   </head>\
   <body>\
@@ -151,5 +170,87 @@ mod test {
   </body>\
 </html>";
         assert_eq!(body, expected_body);
+    }
+
+    #[async_std::test]
+    async fn static_content_returns_appropriate_files() {
+        // Setup
+        let state = State {
+            markdown_converter: MockConverter,
+            content_finder: MockFinder,
+        };
+        let app = build_app(state);
+        let mut server = make_server(app.into_http_service()).unwrap();
+
+        // Expected results
+        // (path, status, mime, body)
+        let expected = vec![
+            (
+                "/static/octicons/octicons.css",
+                200,
+                "text/css; charset=utf-8",
+                {
+                    let mut vec = Vec::new();
+                    vec.extend_from_slice(include_bytes!("../static/octicons/octicons.css"));
+                    vec
+                },
+            ),
+            (
+                "/static/octicons/octicons.eot",
+                200,
+                "application/vnd.ms-fontobject",
+                {
+                    let mut vec = Vec::new();
+                    vec.extend_from_slice(include_bytes!("../static/octicons/octicons.eot"));
+                    vec
+                },
+            ),
+            ("/static/octicons/octicons.svg", 200, "image/svg+xml", {
+                let mut vec = Vec::new();
+                vec.extend_from_slice(include_bytes!("../static/octicons/octicons.svg"));
+                vec
+            }),
+            ("/static/octicons/octicons.ttf", 200, "font/ttf", {
+                let mut vec = Vec::new();
+                vec.extend_from_slice(include_bytes!("../static/octicons/octicons.ttf"));
+                vec
+            }),
+            ("/static/octicons/octicons.woff", 200, "font/woff", {
+                let mut vec = Vec::new();
+                vec.extend_from_slice(include_bytes!("../static/octicons/octicons.woff"));
+                vec
+            }),
+            ("/static/octicons/octicons.woff2", 200, "font/woff2", {
+                let mut vec = Vec::new();
+                vec.extend_from_slice(include_bytes!("../static/octicons/octicons.woff2"));
+                vec
+            }),
+        ];
+
+        for (path, status, mime, body) in expected.iter() {
+            // Make request
+            let req = http::Request::get(*path)
+                .body(Body::empty())
+                .unwrap();
+            let res = server.simulate(req).unwrap();
+
+            // Assert
+            let res_status = res.status();
+            assert_eq!(&res_status.as_u16(), status, "path: {}", path);
+
+            // End the borrow of res so we can consume it for the body
+            {
+                let res_mime = res
+                    .headers()
+                    .get("content-type")
+                    .expect("Could not get content-type");
+                assert_eq!(res_mime, mime, "path: {}", path);
+            }
+
+            let mut res_body: Vec<u8> = Vec::with_capacity(1);
+            res.into_body().read_to_end(&mut res_body).await.unwrap();
+
+            assert_eq!(&res_body, body, "path: {}", path);
+        }
     }
 }
