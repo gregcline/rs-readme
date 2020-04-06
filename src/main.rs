@@ -15,7 +15,7 @@ use tide::{middleware, Request, Response, Server};
 use std::env;
 use std::path::PathBuf;
 
-use content_finder::{ContentFinder, Finder};
+use content_finder::{ContentError, ContentFinder, Finder};
 use markdown_converter::{Converter, MarkdownConverter};
 
 pub struct State<M, C>
@@ -48,6 +48,19 @@ fn wrap_converted(converted: String) -> String {
     )
 }
 
+fn not_markdown(file: &str) -> String {
+    format!(
+        "{}",
+        html! {
+            h1 : "Not a Markdown File";
+            p {
+                strong : file;
+                : " is not a markdown file and cannot be rendered";
+            }
+        }
+    )
+}
+
 async fn render_readme(
     req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
 ) -> tide::Result {
@@ -73,7 +86,42 @@ async fn render_readme(
 
     Ok(Response::new(200)
         .body_string(resp)
-        .set_mime(mime::TEXT_HTML))
+        .set_mime(mime::TEXT_HTML_UTF_8))
+}
+
+async fn render_markdown_path(
+    req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+) -> tide::Result {
+    let state = req.state();
+
+    let contents = state
+        .content_finder
+        .content_for(&format!(".{}", req.uri().path()))
+        .map_err(|err| match err {
+            ContentError::NotMarkdown => Response::new(400)
+                .body_string(wrap_converted(not_markdown(req.uri().path())))
+                .set_mime(mime::TEXT_HTML_UTF_8),
+            ContentError::CouldNotFetch => {
+                Response::new(404).body_string(format!("Could not find {}", req.uri().path()))
+            }
+        })?;
+
+    let converted = state
+        .markdown_converter
+        .convert_markdown(&contents)
+        .await
+        .map_err(|_| {
+            Response::new(500).body_string(format!(
+                "Could not convert the following markdown:\n {}",
+                &contents
+            ))
+        })?;
+
+    let resp = wrap_converted(converted);
+
+    Ok(Response::new(200)
+        .body_string(resp)
+        .set_mime(mime::TEXT_HTML_UTF_8))
 }
 
 fn build_app(
@@ -85,7 +133,9 @@ fn build_app(
     let mut app = Server::with_state(state);
     app.middleware(middleware::RequestLogger::new());
     app.at("").get(render_readme);
-    app.at("/static/*").get(static_files::static_content);
+    app.at("/static/octicons/:file")
+        .get(static_files::static_content);
+    app.at("/*").get(render_markdown_path);
 
     app
 }
@@ -110,6 +160,7 @@ async fn main() -> std::result::Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod test {
+    // Create mock
     use super::*;
     use async_std::io::ReadExt;
     use async_trait::async_trait;
@@ -117,6 +168,9 @@ mod test {
     use http_service::Body;
     use http_service_mock::make_server;
     use markdown_converter::MarkdownError;
+    use pretty_assertions::assert_eq;
+    use std::collections::HashSet;
+    use std::sync::{Arc, Mutex};
 
     struct MockConverter;
 
@@ -132,6 +186,39 @@ mod test {
     impl ContentFinder for MockFinder {
         fn content_for(&self, _resource: &str) -> Result<String, ContentError> {
             Ok("# A Readme".to_string())
+        }
+    }
+
+    struct MockAssertSeen {
+        seen: Arc<Mutex<HashSet<String>>>,
+    }
+
+    impl MockAssertSeen {
+        fn new(seen: Arc<Mutex<HashSet<String>>>) -> MockAssertSeen {
+            MockAssertSeen { seen }
+        }
+    }
+
+    impl ContentFinder for MockAssertSeen {
+        fn content_for(&self, resource: &str) -> Result<String, ContentError> {
+            self.seen
+                .lock()
+                .expect("Could not lock mutex in content_for")
+                .insert(resource.to_string());
+
+            Ok(format!("content for: {}", resource).to_string())
+        }
+    }
+
+    #[async_trait]
+    impl MarkdownConverter for MockAssertSeen {
+        async fn convert_markdown(&self, md: &str) -> Result<String, MarkdownError> {
+            self.seen
+                .lock()
+                .expect("Could not lock mutex in convert_markdown")
+                .insert(md.to_string());
+
+            Ok(md.to_string())
         }
     }
 
@@ -153,6 +240,15 @@ mod test {
         let status = res.status();
         assert_eq!(status.as_u16(), 200);
 
+        // End the borrow of res so we can consume it for the body
+        {
+            let mime = res
+                .headers()
+                .get("content-type")
+                .expect("Could not get content-type");
+            assert_eq!(mime, "text/html; charset=utf-8");
+        }
+
         let mut body = String::with_capacity(1);
         res.into_body().read_to_string(&mut body).await.unwrap();
         let expected_body = "\
@@ -167,6 +263,103 @@ mod test {
   </head>\
   <body>\
     <h1>A Readme</h1>\
+  </body>\
+</html>";
+        assert_eq!(body, expected_body);
+    }
+
+    #[async_std::test]
+    async fn calls_content_finder_with_file_path() {
+        // Setup
+        let converter = Arc::new(Mutex::new(HashSet::new()));
+        let finder = Arc::new(Mutex::new(HashSet::new()));
+        let state = State {
+            markdown_converter: MockAssertSeen::new(converter.clone()),
+            content_finder: MockAssertSeen::new(finder.clone()),
+        };
+        let app = build_app(state);
+        let mut server = make_server(app.into_http_service()).unwrap();
+
+        // Request
+        let req = http::Request::get("/test_dir/a.md")
+            .body(Body::empty())
+            .unwrap();
+        let res = server.simulate(req).unwrap();
+
+        // Assert
+        let status = res.status();
+        assert_eq!(status.as_u16(), 200);
+
+        // End the borrow of res so we can consume it for the body
+        {
+            let mime = res
+                .headers()
+                .get("content-type")
+                .expect("Could not get content-type");
+            assert_eq!(mime, "text/html; charset=utf-8");
+        }
+
+        assert!(finder
+            .lock()
+            .expect("Could not lock in finder assert")
+            .contains("./test_dir/a.md"));
+        assert!(converter
+            .lock()
+            .expect("Could not lock in converter assert")
+            .contains("content for: ./test_dir/a.md"));
+    }
+
+    #[async_std::test]
+    async fn returns_400_for_non_md_file() {
+        // Create mock
+        struct MockFinderError;
+
+        impl ContentFinder for MockFinderError {
+            fn content_for(&self, _resource: &str) -> Result<String, ContentError> {
+                Err(ContentError::NotMarkdown)
+            }
+        }
+
+        // Setup
+        let state = State {
+            markdown_converter: MockConverter,
+            content_finder: MockFinderError,
+        };
+        let app = build_app(state);
+        let mut server = make_server(app.into_http_service()).unwrap();
+
+        // Request
+        let req = http::Request::get("/foo.txt").body(Body::empty()).unwrap();
+        let res = server.simulate(req).unwrap();
+
+        // Assert
+        let status = res.status();
+        assert_eq!(status.as_u16(), 400);
+
+        // End the borrow of res so we can consume it for the body
+        {
+            let mime = res
+                .headers()
+                .get("content-type")
+                .expect("Could not get content-type");
+            assert_eq!(mime, "text/html; charset=utf-8");
+        }
+
+        let mut body = String::with_capacity(1);
+        res.into_body().read_to_string(&mut body).await.unwrap();
+        let expected_body = "\
+<!DOCTYPE html>\
+<html>\
+  <head>\
+  <link rel=\"stylesheet\" href=\"/static/octicons/octicons.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
+    <title>readme-rs</title>\
+  </head>\
+  <body>\
+    <h1>Not a Markdown File</h1>\
+    <p><strong>/foo.txt</strong> is not a markdown file and cannot be rendered</p>\
   </body>\
 </html>";
         assert_eq!(body, expected_body);
@@ -229,9 +422,7 @@ mod test {
 
         for (path, status, mime, body) in expected.iter() {
             // Make request
-            let req = http::Request::get(*path)
-                .body(Body::empty())
-                .unwrap();
+            let req = http::Request::get(*path).body(Body::empty()).unwrap();
             let res = server.simulate(req).unwrap();
 
             // Assert
