@@ -5,7 +5,7 @@ authors = ["Greg Cline <gregrcline@gmail.com>"]
 edition = "2018"
 
 [[bin]]
-name = "rs_readme_bin"
+name = "rs-readme"
 path = "src/main.rs"
 
 [lib]

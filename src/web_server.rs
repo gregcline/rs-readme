@@ -56,7 +56,8 @@ fn base_html(title: &str, content: &str) -> String {
 
 /// The wrapping necessary to make the rendered markdown file to look right
 fn markdown_html(file_name: &str, md_content: &str) -> String {
-    format!("{}",
+    format!(
+        "{}",
         html! {
             div(class="page") {
                 div(id="preview-page", class="preview-page") {
@@ -137,14 +138,17 @@ async fn render_markdown_path(
     let state = req.state();
 
     let path = req.uri().path();
-    let file = path.split("/").last().unwrap_or("rs-readme");
+    let file = path.split('/').last().unwrap_or("rs-readme");
 
     let contents = state
         .content_finder
         .content_for(&format!(".{}", path))
         .map_err(|err| match err {
             ContentError::NotMarkdown => Response::new(400)
-                .body_string(base_html("rs-readme", &not_markdown_html(&req.uri().path())))
+                .body_string(base_html(
+                    "rs-readme",
+                    &not_markdown_html(&req.uri().path()),
+                ))
                 .set_mime(mime::TEXT_HTML_UTF_8),
             ContentError::CouldNotFetch => {
                 Response::new(404).body_string(format!("Could not find {}", req.uri().path()))
@@ -179,8 +183,7 @@ pub fn build_app(
     let mut app = Server::with_state(state);
     app.middleware(middleware::RequestLogger::new());
     app.at("").get(render_readme);
-    app.at("/static/octicons/:file")
-        .get(static_files::octicons);
+    app.at("/static/octicons/:file").get(static_files::octicons);
     app.at("/static/style.css").get(static_files::style);
     app.at("/*").get(render_markdown_path);
 
