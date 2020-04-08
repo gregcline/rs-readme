@@ -1292,7 +1292,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea509065eb0b3c446acdd0102f0d46567dc30902dc0be91d6552035d92b0f4f8"
 
 [[package]]
-name = "rs-readme"
+name = "rs_readme"
 version = "0.1.0"
 dependencies = [
  "async-std",

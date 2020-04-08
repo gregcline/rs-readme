@@ -1,4 +1,6 @@
-use super::{content_finder::ContentFinder, markdown_converter::MarkdownConverter, State};
+use super::{
+    content_finder::ContentFinder, markdown_converter::MarkdownConverter, web_server::State,
+};
 use tide::{Request, Response};
 
 // This will bundle the necessary files in the final binary so we don't have to worry about
