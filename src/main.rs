@@ -9,7 +9,7 @@ use rs_readme::{build_app, State};
 async fn main() -> std::result::Result<(), std::io::Error> {
     pretty_env_logger::init();
     let addr = format!(
-        "0.0.0.0:{}",
+        "127.0.0.1:{}",
         env::var("PORT").unwrap_or_else(|_| "4000".to_string())
     );
 
@@ -20,5 +20,9 @@ async fn main() -> std::result::Result<(), std::io::Error> {
 
     let app = build_app(state);
 
+    println!(
+        "Listening on {}\nYou can change the port with the PORT env var",
+        addr
+    );
     app.listen(addr).await
 }

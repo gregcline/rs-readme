@@ -52,6 +52,6 @@ pub async fn style(
     _req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
 ) -> tide::Result {
     Ok(Response::new(200)
-            .body_string(STYLE_CSS.to_string())
-            .set_mime(mime::TEXT_CSS_UTF_8))
+        .body_string(STYLE_CSS.to_string())
+        .set_mime(mime::TEXT_CSS_UTF_8))
 }

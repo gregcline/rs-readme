@@ -376,7 +376,9 @@ async fn styles_returns_right_css() {
     let mut server = make_server(app.into_http_service()).unwrap();
 
     // Make request
-    let req = http::Request::get("/static/style.css").body(Body::empty()).unwrap();
+    let req = http::Request::get("/static/style.css")
+        .body(Body::empty())
+        .unwrap();
     let res = server.simulate(req).unwrap();
 
     // Assert
