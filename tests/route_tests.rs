@@ -104,10 +104,93 @@ async fn index_wraps_in_html() {
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css\">\
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css\">\
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
-    <title>readme-rs</title>\
+  <link rel=\"stylesheet\" href=\"/static/style.css\">\
+    <title>README.md</title>\
   </head>\
   <body>\
-    <h1>A Readme</h1>\
+    <div class=\"page\">\
+      <div id=\"preview-page\" class=\"preview-page\">\
+        <div role=\"main\" class=\"main-content\">\
+          <div class=\"container new-discussion-timeline experiment-repo-nav\">\
+            <div class=\"repository-content\">\
+              <div id=\"readme\" class=\"readme boxed-group clearfix announce instapaper_body md\">\
+                <h3>\
+                  <span class=\"octicon octicon-book\"></span> \
+                  README.md\
+                </h3>\
+                <article class=\"markdown-body entry-content\" itemprop=\"text\">\
+                  <h1>A Readme</h1>\
+                </article>\
+              </div>\
+            </div>\
+          </div>\
+        </div>\
+      </div>\
+      <div>&nbsp;</div>\
+    </div>\
+  </body>\
+</html>";
+    assert_eq!(body, expected_body);
+}
+
+#[async_std::test]
+async fn non_index_wraps_in_html() {
+    // Setup
+    let state = State::new(MockConverter, MockFinder);
+    let app = build_app(state);
+    let mut server = make_server(app.into_http_service()).unwrap();
+
+    // Request
+    let req = http::Request::get("/foo.md").body(Body::empty()).unwrap();
+    let res = server.simulate(req).unwrap();
+
+    // Assert
+    let status = res.status();
+    assert_eq!(status.as_u16(), 200);
+
+    // End the borrow of res so we can consume it for the body
+    {
+        let mime = res
+            .headers()
+            .get("content-type")
+            .expect("Could not get content-type");
+        assert_eq!(mime, "text/html; charset=utf-8");
+    }
+
+    let mut body = String::with_capacity(1);
+    res.into_body().read_to_string(&mut body).await.unwrap();
+    let expected_body = "\
+<!DOCTYPE html>\
+<html>\
+  <head>\
+  <link rel=\"stylesheet\" href=\"/static/octicons/octicons.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
+  <link rel=\"stylesheet\" href=\"/static/style.css\">\
+    <title>foo.md</title>\
+  </head>\
+  <body>\
+    <div class=\"page\">\
+      <div id=\"preview-page\" class=\"preview-page\">\
+        <div role=\"main\" class=\"main-content\">\
+          <div class=\"container new-discussion-timeline experiment-repo-nav\">\
+            <div class=\"repository-content\">\
+              <div id=\"readme\" class=\"readme boxed-group clearfix announce instapaper_body md\">\
+                <h3>\
+                  <span class=\"octicon octicon-book\"></span> \
+                  foo.md\
+                </h3>\
+                <article class=\"markdown-body entry-content\" itemprop=\"text\">\
+                  <h1>A Readme</h1>\
+                </article>\
+              </div>\
+            </div>\
+          </div>\
+        </div>\
+      </div>\
+      <div>&nbsp;</div>\
+    </div>\
   </body>\
 </html>";
     assert_eq!(body, expected_body);
@@ -197,7 +280,8 @@ async fn returns_400_for_non_md_file() {
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css\">\
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css\">\
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
-    <title>readme-rs</title>\
+  <link rel=\"stylesheet\" href=\"/static/style.css\">\
+    <title>rs-readme</title>\
   </head>\
   <body>\
     <h1>Not a Markdown File</h1>\
@@ -282,4 +366,34 @@ async fn static_content_returns_appropriate_files() {
 
         assert_eq!(&res_body, body, "path: {}", path);
     }
+}
+
+#[async_std::test]
+async fn styles_returns_right_css() {
+    // Setup
+    let state = State::new(MockConverter, MockFinder);
+    let app = build_app(state);
+    let mut server = make_server(app.into_http_service()).unwrap();
+
+    // Make request
+    let req = http::Request::get("/static/style.css").body(Body::empty()).unwrap();
+    let res = server.simulate(req).unwrap();
+
+    // Assert
+    let res_status = res.status();
+    assert_eq!(res_status.as_u16(), 200);
+
+    // End the borrow of res so we can consume it for the body
+    {
+        let res_mime = res
+            .headers()
+            .get("content-type")
+            .expect("Could not get content-type");
+        assert_eq!(res_mime, "text/css; charset=utf-8");
+    }
+
+    let mut res_body = String::with_capacity(1);
+    res.into_body().read_to_string(&mut res_body).await.unwrap();
+
+    assert_eq!(&res_body, include_str!("../static/style.css"));
 }

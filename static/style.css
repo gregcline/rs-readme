@@ -1,0 +1,13 @@
+/* Page tweaks */
+.preview-page {
+    margin-top: 64px;
+}
+/* User-content tweaks */
+.timeline-comment-wrapper > .timeline-comment:after,
+.timeline-comment-wrapper > .timeline-comment:before {
+    content: none;
+}
+/* User-content overrides */
+.discussion-timeline.wide {
+    width: 920px;
+}

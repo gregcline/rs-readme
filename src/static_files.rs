@@ -12,8 +12,10 @@ const OCTICON_TTF: &[u8] = include_bytes!("../static/octicons/octicons.ttf");
 const OCTICON_WOFF: &[u8] = include_bytes!("../static/octicons/octicons.woff");
 const OCTICON_WOFF2: &[u8] = include_bytes!("../static/octicons/octicons.woff2");
 
-/// The endpoint to return the relevant static file.
-pub async fn static_content(
+const STYLE_CSS: &str = include_str!("../static/style.css");
+
+/// The endpoint to return files related to octicons
+pub async fn octicons(
     req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
 ) -> tide::Result {
     match req.param::<String>("file") {
@@ -43,4 +45,13 @@ pub async fn static_content(
             .body_string("This file does not exist".to_string())
             .set_mime(mime::TEXT_HTML)),
     }
+}
+
+/// The endpoint to return our styles
+pub async fn style(
+    _req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+) -> tide::Result {
+    Ok(Response::new(200)
+            .body_string(STYLE_CSS.to_string())
+            .set_mime(mime::TEXT_CSS_UTF_8))
 }

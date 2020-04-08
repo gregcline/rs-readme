@@ -34,7 +34,7 @@ where
 }
 
 /// The basic HTML of our page, the `<head>` and CSS and `<body>`
-fn base_html(converted: String) -> String {
+fn base_html(title: &str, content: &str) -> String {
     format!(
         "{}",
         html! {
@@ -45,11 +45,38 @@ fn base_html(converted: String) -> String {
                     link(rel="stylesheet", href="https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css");
                     link(rel="stylesheet", href="https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css");
                     link(rel="stylesheet", href="https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css");
-                    title : "readme-rs";
+                    link(rel="stylesheet", href="/static/style.css");
+                    title : title;
                 }
-                body {
-                    : Raw(&converted);
+                body : Raw(content);
+            }
+        }
+    )
+}
+
+/// The wrapping necessary to make the rendered markdown file to look right
+fn markdown_html(file_name: &str, md_content: &str) -> String {
+    format!("{}",
+        html! {
+            div(class="page") {
+                div(id="preview-page", class="preview-page") {
+                    div(role="main", class="main-content") {
+                        div(class="container new-discussion-timeline experiment-repo-nav") {
+                            div(class="repository-content") {
+                                div(id="readme", class="readme boxed-group clearfix announce instapaper_body md") {
+                                    h3 {
+                                        span(class="octicon octicon-book");
+                                        : format!(" {}",file_name);
+                                    }
+                                    article(class="markdown-body entry-content", itemprop="text") {
+                                        : Raw(md_content);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+                div : Raw("&nbsp;");
             }
         }
     )
@@ -57,7 +84,7 @@ fn base_html(converted: String) -> String {
 
 /// The error HTML indicating the requested file is not markdown
 /// and therefore can't be rendered.
-fn not_markdown(file: &str) -> String {
+fn not_markdown_html(file: &str) -> String {
     format!(
         "{}",
         html! {
@@ -96,7 +123,7 @@ async fn render_readme(
             ))
         })?;
 
-    let resp = base_html(converted);
+    let resp = base_html("README.md", &markdown_html("README.md", &converted));
 
     Ok(Response::new(200)
         .body_string(resp)
@@ -109,12 +136,15 @@ async fn render_markdown_path(
 ) -> tide::Result {
     let state = req.state();
 
+    let path = req.uri().path();
+    let file = path.split("/").last().unwrap_or("rs-readme");
+
     let contents = state
         .content_finder
-        .content_for(&format!(".{}", req.uri().path()))
+        .content_for(&format!(".{}", path))
         .map_err(|err| match err {
             ContentError::NotMarkdown => Response::new(400)
-                .body_string(base_html(not_markdown(req.uri().path())))
+                .body_string(base_html("rs-readme", &not_markdown_html(&req.uri().path())))
                 .set_mime(mime::TEXT_HTML_UTF_8),
             ContentError::CouldNotFetch => {
                 Response::new(404).body_string(format!("Could not find {}", req.uri().path()))
@@ -132,7 +162,7 @@ async fn render_markdown_path(
             ))
         })?;
 
-    let resp = base_html(converted);
+    let resp = base_html(file, &markdown_html(file, &converted));
 
     Ok(Response::new(200)
         .body_string(resp)
@@ -150,8 +180,79 @@ pub fn build_app(
     app.middleware(middleware::RequestLogger::new());
     app.at("").get(render_readme);
     app.at("/static/octicons/:file")
-        .get(static_files::static_content);
+        .get(static_files::octicons);
+    app.at("/static/style.css").get(static_files::style);
     app.at("/*").get(render_markdown_path);
 
     app
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_base_html() {
+        let expected = "\
+<!DOCTYPE html>\
+<html>\
+  <head>\
+  <link rel=\"stylesheet\" href=\"/static/octicons/octicons.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
+  <link rel=\"stylesheet\" href=\"/static/style.css\">\
+    <title>test title</title>\
+  </head>\
+  <body>\
+    Test content\
+  </body>\
+</html>";
+
+        let actual = base_html("test title", "Test content");
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_markdown_html() {
+        let expected = "\
+<div class=\"page\">\
+  <div id=\"preview-page\" class=\"preview-page\">\
+    <div role=\"main\" class=\"main-content\">\
+      <div class=\"container new-discussion-timeline experiment-repo-nav\">\
+        <div class=\"repository-content\">\
+          <div id=\"readme\" class=\"readme boxed-group clearfix announce instapaper_body md\">\
+            <h3>\
+              <span class=\"octicon octicon-book\"></span> \
+              file_name.md\
+            </h3>\
+            <article class=\"markdown-body entry-content\" itemprop=\"text\">\
+              Test content\
+            </article>\
+          </div>\
+        </div>\
+      </div>\
+    </div>\
+  </div>\
+  <div>&nbsp;</div>\
+</div>";
+
+        let actual = markdown_html("file_name.md", "Test content");
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_not_markdown_html() {
+        let expected = "\
+<h1>Not a Markdown File</h1>\
+<p><strong>test_file</strong> is not a markdown file and cannot be rendered</p>\
+";
+
+        let actual = not_markdown_html("test_file");
+
+        assert_eq!(expected, actual);
+    }
 }
