@@ -1,27 +1,28 @@
-use std::env;
-use std::path::PathBuf;
+use structopt::StructOpt;
 
-use rs_readme::Converter;
-use rs_readme::FileFinder;
-use rs_readme::{build_app, State};
+use rs_readme::{build_app, State, Converter, FileFinder, Args};
 
 #[async_std::main]
 async fn main() -> std::result::Result<(), std::io::Error> {
     pretty_env_logger::init();
+
+    let args = Args::from_args();
+
     let addr = format!(
-        "127.0.0.1:{}",
-        env::var("PORT").unwrap_or_else(|_| "4000".to_string())
+        "{}:{}",
+        args.host,
+        args.port
     );
 
     let state = State::new(
         Converter::new("https://api.github.com".to_string()),
-        FileFinder::new(PathBuf::from(".")),
+        FileFinder::new(args.folder),
     );
 
     let app = build_app(state);
 
     println!(
-        "Listening on {}\nYou can change the port with the PORT env var",
+        "Listening on {}",
         addr
     );
     app.listen(addr).await
