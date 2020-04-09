@@ -2,7 +2,10 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "rs-readme", about = "A simple web server for previewing .md files")]
+#[structopt(
+    name = "rs-readme",
+    about = "A simple web server for previewing .md files"
+)]
 pub struct Args {
     /// The host to serve the readme files on
     #[structopt(short, long, default_value = "127.0.0.1")]
@@ -15,4 +18,8 @@ pub struct Args {
     /// The folder to use as the root when serving files
     #[structopt(short, long, default_value = ".")]
     pub folder: PathBuf,
+
+    /// The GitHub context to render in, should be of the form: `user/repo` or `org/repo`
+    #[structopt(short, long)]
+    pub context: Option<String>,
 }
