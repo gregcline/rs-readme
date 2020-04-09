@@ -32,12 +32,30 @@ pub trait MarkdownConverter {
 /// Can convert from markdown to HTML using the GitHub API.
 pub struct Converter {
     api_path: String,
+    context: Option<String>,
 }
 
 impl Converter {
     /// Builds a new converter using the given GitHub API.
-    pub fn new(api_path: String) -> Converter {
-        Converter { api_path }
+    pub fn new(api_path: String, context: Option<String>) -> Converter {
+        Converter { api_path, context }
+    }
+
+    /// Builds the request body for github
+    fn build_body(&self, md: &str) -> MarkdownRequest {
+        if let Some(context) = &self.context {
+            MarkdownRequest {
+                text: md.to_string(),
+                mode: "gfm".to_string(),
+                context: context.clone(),
+            }
+        } else {
+            MarkdownRequest {
+                text: md.to_string(),
+                mode: "markdown".to_string(),
+                context: "".to_string(),
+            }
+        }
     }
 }
 
@@ -49,11 +67,7 @@ impl MarkdownConverter for Converter {
 
         let mut resp = client
             .post(format!("{}/markdown", &self.api_path))
-            .body_json(&MarkdownRequest {
-                text: md.to_string(),
-                mode: "markdown".to_string(),
-                context: "".to_string(),
-            })
+            .body_json(&self.build_body(md))
             .map_err(|err| {
                 error!("{:?}", err);
                 MarkdownError::ConverterUnavailable("Error making request".to_string())
@@ -92,7 +106,7 @@ mod test {
             .expect(1)
             .create();
 
-        let converter = Converter::new(mockito::server_url());
+        let converter = Converter::new(mockito::server_url(), None);
         let html = converter.convert_markdown("# A thing!").await;
 
         m.assert();
@@ -107,7 +121,7 @@ mod test {
             .expect(1)
             .create();
 
-        let converter = Converter::new(mockito::server_url());
+        let converter = Converter::new(mockito::server_url(), None);
         let html = converter.convert_markdown("# A thing!").await;
 
         m.assert();
@@ -117,5 +131,25 @@ mod test {
                 "Github error message".to_string()
             ))
         );
+    }
+
+    #[async_std::test]
+    async fn converter_makes_gfm_request_if_context_provided() {
+        let m = mock("POST", "/markdown")
+            .match_body(Matcher::JsonString(
+                "{\"text\": \"# A thing!\", \"mode\": \"gfm\", \"context\": \"gregcline/rs-readme\"}".to_string(),
+            ))
+            .with_body("<h1>A thing!</h1>")
+            .expect(1)
+            .create();
+
+        let converter = Converter::new(
+            mockito::server_url(),
+            Some("gregcline/rs-readme".to_string()),
+        );
+        let html = converter.convert_markdown("# A thing!").await;
+
+        m.assert();
+        assert_eq!(html, Ok("<h1>A thing!</h1>".to_string()));
     }
 }

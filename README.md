@@ -29,10 +29,26 @@ rs-readme
 ```
 in any folder to start the server there.
 
+#### Options
+```
+USAGE:
+    rs-readme [OPTIONS]
+
+FLAGS:
+        --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -c, --context <context>    The GitHub context to render in, should be of the form: `user/repo` or `org/repo`
+    -f, --folder <folder>      The folder to use as the root when serving files [default: .]
+    -h, --host <host>          The host to serve the readme files on [default: 127.0.0.1]
+    -p, --port <port>          The port to serve the readme files on [default: 4000]
+```
+
 ### Todos (maybe)
 - [x] Add a real CLI
 - [ ] Better error messages
 - [ ] Auto reloading on file save
 - [ ] Testing on multiple platforms
 - [ ] Building for multiple platforms and hosting the binaries somewhere (probably github)
-- [ ] Figure out why checkboxes don't render
+- [x] Figure out why checkboxes don't render
