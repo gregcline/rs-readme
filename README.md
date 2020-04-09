@@ -30,7 +30,7 @@ rs-readme
 in any folder to start the server there.
 
 ### Todos (maybe)
-- [ ] Add a real CLI
+- [x] Add a real CLI
 - [ ] Better error messages
 - [ ] Auto reloading on file save
 - [ ] Testing on multiple platforms
