@@ -79,6 +79,7 @@ fn markdown_html(file_name: &str, md_content: &str) -> String {
                 }
                 div : Raw("&nbsp;");
             }
+            script : Raw("setInterval(function() { location.reload(); }, 3000);");
         }
     )
 }
@@ -108,10 +109,14 @@ async fn render_readme(
 ) -> tide::Result {
     let state = req.state();
 
-    let contents = state
+    let (contents, digest) = state
         .content_finder
         .content_for("README.md")
         .map_err(|_| Response::new(404).body_string("Could not find README.md".to_string()))?;
+
+    if req.header("If-None-Match") == Some(&format!("\"{}\"", &digest)) {
+        return Ok(Response::new(304));
+    }
 
     let converted = state
         .markdown_converter
@@ -127,6 +132,7 @@ async fn render_readme(
     let resp = base_html("README.md", &markdown_html("README.md", &converted));
 
     Ok(Response::new(200)
+        .set_header("ETag", format!("\"{}\"", digest))
         .body_string(resp)
         .set_mime(mime::TEXT_HTML_UTF_8))
 }
@@ -140,7 +146,7 @@ async fn render_markdown_path(
     let path = req.uri().path();
     let file = path.split('/').last().unwrap_or("rs-readme");
 
-    let contents = state
+    let (contents, digest) = state
         .content_finder
         .content_for(&format!(".{}", path))
         .map_err(|err| match err {
@@ -154,6 +160,10 @@ async fn render_markdown_path(
                 Response::new(404).body_string(format!("Could not find {}", req.uri().path()))
             }
         })?;
+
+    if req.header("If-None-Match") == Some(&format!("\"{}\"", &digest)) {
+        return Ok(Response::new(304));
+    }
 
     let converted = state
         .markdown_converter
@@ -169,6 +179,7 @@ async fn render_markdown_path(
     let resp = base_html(file, &markdown_html(file, &converted));
 
     Ok(Response::new(200)
+        .set_header("ETag", format!("\"{}\"", digest))
         .body_string(resp)
         .set_mime(mime::TEXT_HTML_UTF_8))
 }
@@ -240,7 +251,11 @@ mod test {
     </div>\
   </div>\
   <div>&nbsp;</div>\
-</div>";
+</div>\
+<script>\
+    setInterval(function() { location.reload(); }, 3000);\
+</script>\
+";
 
         let actual = markdown_html("file_name.md", "Test content");
 

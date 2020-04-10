@@ -25,8 +25,8 @@ impl MarkdownConverter for MockConverter {
 struct MockFinder;
 
 impl ContentFinder for MockFinder {
-    fn content_for(&self, _resource: &str) -> Result<String, ContentError> {
-        Ok("# A Readme".to_string())
+    fn content_for(&self, _resource: &str) -> Result<(String, String), ContentError> {
+        Ok(("# A Readme".to_string(), "foo".to_string()))
     }
 }
 
@@ -48,13 +48,16 @@ impl MockAssertSeen {
 }
 
 impl ContentFinder for MockAssertSeen {
-    fn content_for(&self, resource: &str) -> Result<String, ContentError> {
+    fn content_for(&self, resource: &str) -> Result<(String, String), ContentError> {
         self.seen
             .lock()
             .expect("Could not lock mutex in content_for")
             .insert(resource.to_string());
 
-        Ok(format!("content for: {}", resource).to_string())
+        Ok((
+            format!("content for: {}", resource).to_string(),
+            format!("content for: {}", resource).to_string(),
+        ))
     }
 }
 
@@ -128,6 +131,9 @@ async fn index_wraps_in_html() {
       </div>\
       <div>&nbsp;</div>\
     </div>\
+    <script>\
+        setInterval(function() { location.reload(); }, 3000);\
+    </script>\
   </body>\
 </html>";
     assert_eq!(body, expected_body);
@@ -191,6 +197,9 @@ async fn non_index_wraps_in_html() {
       </div>\
       <div>&nbsp;</div>\
     </div>\
+    <script>\
+        setInterval(function() { location.reload(); }, 3000);\
+    </script>\
   </body>\
 </html>";
     assert_eq!(body, expected_body);
@@ -243,7 +252,7 @@ async fn returns_400_for_non_md_file() {
     struct MockFinderError;
 
     impl ContentFinder for MockFinderError {
-        fn content_for(&self, _resource: &str) -> Result<String, ContentError> {
+        fn content_for(&self, _resource: &str) -> Result<(String, String), ContentError> {
             Err(ContentError::NotMarkdown)
         }
     }
@@ -289,6 +298,57 @@ async fn returns_400_for_non_md_file() {
   </body>\
 </html>";
     assert_eq!(body, expected_body);
+}
+
+#[async_std::test]
+async fn etag_has_the_content_digest() {
+    // Setup
+    let state = State::new(MockConverter, MockFinder);
+    let app = build_app(state);
+    let mut server = make_server(app.into_http_service()).unwrap();
+
+    // (route, etag, status)
+    let expected = vec![("/", "\"foo\"", 200), ("/foo.md", "\"foo\"", 200)];
+
+    // Request
+    for (route, etag, status) in expected {
+        let req = http::Request::get(route).body(Body::empty()).unwrap();
+        let res = server.simulate(req).unwrap();
+
+        // Assert
+        let res_status = res.status();
+        assert_eq!(res_status.as_u16(), status, "Route: {}", route);
+
+        let res_etag = res
+            .headers()
+            .get("ETag")
+            .expect(&format!("Could not get ETag\nRoute: {}", route));
+        assert_eq!(res_etag, etag, "Route: {}", route);
+    }
+}
+
+#[async_std::test]
+async fn respects_if_none_match() {
+    // Setup
+    let state = State::new(MockConverter, MockFinder);
+    let app = build_app(state);
+    let mut server = make_server(app.into_http_service()).unwrap();
+
+    // (route, etag, status)
+    let expected = vec![("/", "\"foo\"", 304), ("/foo.md", "\"foo\"", 304)];
+
+    // Request
+    for (route, etag, status) in expected {
+        let req = http::Request::get(route)
+            .header("If-None-Match", etag)
+            .body(Body::empty())
+            .unwrap();
+        let res = server.simulate(req).unwrap();
+
+        // Assert
+        let res_status = res.status();
+        assert_eq!(res_status.as_u16(), status, "Route: {}", route);
+    }
 }
 
 #[async_std::test]
@@ -354,11 +414,19 @@ async fn static_content_returns_appropriate_files() {
 
         // End the borrow of res so we can consume it for the body
         {
-            let res_mime = res
-                .headers()
+            let headers = res.headers();
+            let res_mime = headers
                 .get("content-type")
-                .expect("Could not get content-type");
-            assert_eq!(res_mime, mime, "path: {}", path);
+                .expect(&format!("Could not get content-type\nPath: {}", path));
+            assert_eq!(res_mime, mime);
+
+            let res_etag = headers
+                .get("etag")
+                .expect(&format!("Could not get etag\nPath: {}", path));
+            assert_eq!(
+                res_etag,
+                &format!("\"{}\"", &sha1::Sha1::from(body).hexdigest())
+            )
         }
 
         let mut res_body: Vec<u8> = Vec::with_capacity(1);
@@ -374,6 +442,7 @@ async fn styles_returns_right_css() {
     let state = State::new(MockConverter, MockFinder);
     let app = build_app(state);
     let mut server = make_server(app.into_http_service()).unwrap();
+    let style_body = include_str!("../static/style.css");
 
     // Make request
     let req = http::Request::get("/static/style.css")
@@ -387,15 +456,83 @@ async fn styles_returns_right_css() {
 
     // End the borrow of res so we can consume it for the body
     {
-        let res_mime = res
-            .headers()
+        let headers = res.headers();
+        let res_mime = headers
             .get("content-type")
             .expect("Could not get content-type");
         assert_eq!(res_mime, "text/css; charset=utf-8");
+
+        let res_etag = headers.get("etag").expect("Could not get etag");
+        assert_eq!(
+            res_etag,
+            &format!("\"{}\"", &sha1::Sha1::from(style_body).hexdigest())
+        )
     }
 
     let mut res_body = String::with_capacity(1);
     res.into_body().read_to_string(&mut res_body).await.unwrap();
 
-    assert_eq!(&res_body, include_str!("../static/style.css"));
+    assert_eq!(&res_body, style_body);
+}
+
+#[async_std::test]
+async fn static_content_respects_if_none_match() {
+    // Setup
+    let state = State::new(MockConverter, MockFinder);
+    let app = build_app(state);
+    let mut server = make_server(app.into_http_service()).unwrap();
+
+    // Expected results
+    // (path, status, mime, body)
+    let expected = vec![
+        ("/static/style.css", 304, {
+            let mut vec = Vec::new();
+            vec.extend_from_slice(include_bytes!("../static/style.css"));
+            vec
+        }),
+        ("/static/octicons/octicons.css", 304, {
+            let mut vec = Vec::new();
+            vec.extend_from_slice(include_bytes!("../static/octicons/octicons.css"));
+            vec
+        }),
+        ("/static/octicons/octicons.eot", 304, {
+            let mut vec = Vec::new();
+            vec.extend_from_slice(include_bytes!("../static/octicons/octicons.eot"));
+            vec
+        }),
+        ("/static/octicons/octicons.svg", 304, {
+            let mut vec = Vec::new();
+            vec.extend_from_slice(include_bytes!("../static/octicons/octicons.svg"));
+            vec
+        }),
+        ("/static/octicons/octicons.ttf", 304, {
+            let mut vec = Vec::new();
+            vec.extend_from_slice(include_bytes!("../static/octicons/octicons.ttf"));
+            vec
+        }),
+        ("/static/octicons/octicons.woff", 304, {
+            let mut vec = Vec::new();
+            vec.extend_from_slice(include_bytes!("../static/octicons/octicons.woff"));
+            vec
+        }),
+        ("/static/octicons/octicons.woff2", 304, {
+            let mut vec = Vec::new();
+            vec.extend_from_slice(include_bytes!("../static/octicons/octicons.woff2"));
+            vec
+        }),
+    ];
+
+    for (path, status, body) in expected.iter() {
+        let digest = sha1::Sha1::from(body).hexdigest();
+        // Make request
+        let req = http::Request::get(*path)
+            .header("If-None-Match", format!("\"{}\"", digest))
+            .body(Body::empty())
+            .unwrap();
+        let res = server.simulate(req).unwrap();
+
+        // Assert
+        let res_status = res.status();
+        assert_eq!(&res_status.as_u16(), status, "path: {}", path);
+    }
 }

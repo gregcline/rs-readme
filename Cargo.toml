@@ -27,6 +27,7 @@ async-trait = "0.1.26"
 horrorshow = "0.8.3"
 mime = "0.3.16"
 structopt = "0.3.12"
+sha1 = { version = "0.6.0", features = [ "std" ]}
 
 [dev-dependencies]
 mockito = "0.23.3"
