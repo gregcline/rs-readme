@@ -1,9 +1,9 @@
 use horrorshow::helper::doctype;
 use horrorshow::prelude::*;
 use tide;
-use tide::{middleware, Request, Response, Server};
+use tide::{http::StatusCode, log, Request, Response, Server, Status};
 
-use crate::content_finder::{ContentError, ContentFinder};
+use crate::content_finder::ContentFinder;
 use crate::markdown_converter::MarkdownConverter;
 use crate::static_files;
 
@@ -83,6 +83,7 @@ fn markdown_html(file_name: &str, md_content: &str) -> String {
     )
 }
 
+// TODO: Figure out how to return HTML errors
 /// The error HTML indicating the requested file is not markdown
 /// and therefore can't be rendered.
 fn not_markdown_html(file: &str) -> String {
@@ -108,25 +109,20 @@ async fn render_readme(
 ) -> tide::Result {
     let state = req.state();
 
-    let contents = state
-        .content_finder
-        .content_for("README.md")
-        .map_err(|_| Response::new(404).body_string("Could not find README.md".to_string()))?;
+    let contents = state.content_finder.content_for("README.md")?;
+    // .map_err(|_| Response::new(StatusCode::NotFound).body_string("Could not find README.md".to_string()))?;
 
-    let converted = state
-        .markdown_converter
-        .convert_markdown(&contents)
-        .await
-        .map_err(|_err| {
-            Response::new(500).body_string(format!(
-                "Could not convert the following markdown:\n {}",
-                &contents
-            ))
-        })?;
+    let converted = state.markdown_converter.convert_markdown(&contents).await?;
+    // .map_err(|_err| {
+    //     Response::new(StatusCode::InternalServerError).body_string(format!(
+    //         "Could not convert the following markdown:\n {}",
+    //         &contents
+    //     ))
+    // })?;
 
     let resp = base_html("README.md", &markdown_html("README.md", &converted));
 
-    Ok(Response::new(200)
+    Ok(Response::new(StatusCode::Ok)
         .body_string(resp)
         .set_mime(mime::TEXT_HTML_UTF_8))
 }
@@ -143,32 +139,30 @@ async fn render_markdown_path(
     let contents = state
         .content_finder
         .content_for(&format!(".{}", path))
-        .map_err(|err| match err {
-            ContentError::NotMarkdown => Response::new(400)
-                .body_string(base_html(
-                    "rs-readme",
-                    &not_markdown_html(&req.uri().path()),
-                ))
-                .set_mime(mime::TEXT_HTML_UTF_8),
-            ContentError::CouldNotFetch => {
-                Response::new(404).body_string(format!("Could not find {}", req.uri().path()))
-            }
-        })?;
+        .status(StatusCode::BadRequest)?;
+    // .map_err(|err| match err {
+    //     ContentError::NotMarkdown => Response::new(StatusCode::BadRequest)
+    //         .body_string(base_html(
+    //             "rs-readme",
+    //             &not_markdown_html(&req.uri().path()),
+    //         ))
+    //         .set_mime(mime::TEXT_HTML_UTF_8),
+    //     ContentError::CouldNotFetch => {
+    //         Response::new(StatusCode::NotFound).body_string(format!("Could not find {}", req.uri().path()))
+    //     }
+    // })?;
 
-    let converted = state
-        .markdown_converter
-        .convert_markdown(&contents)
-        .await
-        .map_err(|_| {
-            Response::new(500).body_string(format!(
-                "Could not convert the following markdown:\n {}",
-                &contents
-            ))
-        })?;
+    let converted = state.markdown_converter.convert_markdown(&contents).await?;
+    // .map_err(|_| {
+    //     Response::new(StatusCode::InternalServerError).body_string(format!(
+    //         "Could not convert the following markdown:\n {}",
+    //         &contents
+    //     ))
+    // })?;
 
     let resp = base_html(file, &markdown_html(file, &converted));
 
-    Ok(Response::new(200)
+    Ok(Response::new(StatusCode::Ok)
         .body_string(resp)
         .set_mime(mime::TEXT_HTML_UTF_8))
 }
@@ -181,7 +175,7 @@ pub fn build_app(
     >,
 ) -> Server<State<impl MarkdownConverter, impl ContentFinder>> {
     let mut app = Server::with_state(state);
-    app.middleware(middleware::RequestLogger::new());
+    app.middleware(log::LogMiddleware::new());
     app.at("").get(render_readme);
     app.at("/static/octicons/:file").get(static_files::octicons);
     app.at("/static/style.css").get(static_files::style);

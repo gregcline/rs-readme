@@ -1,3 +1,6 @@
+use std::error::Error;
+use std::fmt;
+
 use async_trait::async_trait;
 use log::error;
 use surf;
@@ -7,6 +10,18 @@ use surf;
 pub enum MarkdownError {
     ConverterUnavailable(String),
 }
+
+impl fmt::Display for MarkdownError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MarkdownError::ConverterUnavailable(reason) => {
+                write!(f, "Could not convert\n{}", reason)
+            }
+        }
+    }
+}
+
+impl Error for MarkdownError {}
 
 /// The JSON body to send some text to GitHub's API to be converted from
 /// markdown to HTML.

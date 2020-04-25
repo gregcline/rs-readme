@@ -15,7 +15,7 @@ path = "src/lib.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tide = { git = "https://github.com/Licenser/tide", branch = "result-into-response" }
+tide = "0.8.0"
 surf = "1.0.3"
 serde = "1.0.105"
 serde_derive = "1.0.105"
@@ -30,8 +30,8 @@ structopt = "0.3.12"
 
 [dev-dependencies]
 mockito = "0.23.3"
-http-service-mock = "0.4.0"
-http = "0.1.19"
-http-service = "0.4.0"
+http-service-mock = "0.5.0"
+http-types = "1.2.0"
+http-service = "0.5.0"
 pretty_assertions = "0.6.1"
 

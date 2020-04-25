@@ -1,4 +1,6 @@
+use std::error::Error;
 use std::ffi::OsStr;
+use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
@@ -18,6 +20,17 @@ pub enum ContentError {
     /// The requested content wasn't markdown
     NotMarkdown,
 }
+
+impl fmt::Display for ContentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ContentError::CouldNotFetch => write!(f, "Could not find the resource"),
+            ContentError::NotMarkdown => write!(f, "The file was not markdown"),
+        }
+    }
+}
+
+impl Error for ContentError {}
 
 /// Something that can find some markdown content given a resource identifier.
 pub trait ContentFinder {
