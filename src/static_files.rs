@@ -1,7 +1,7 @@
 use super::{
     content_finder::ContentFinder, markdown_converter::MarkdownConverter, web_server::State,
 };
-use tide::{Request, Response};
+use tide::{http::StatusCode, Request, Response};
 
 // This will bundle the necessary files in the final binary so we don't have to worry about
 // portability.
@@ -19,29 +19,29 @@ pub async fn octicons(
     req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
 ) -> tide::Result {
     match req.param::<String>("file") {
-        Ok(path) if path.starts_with("octicons.css") => Ok(Response::new(200)
+        Ok(path) if path.starts_with("octicons.css") => Ok(Response::new(StatusCode::Ok)
             .body_string(OCTICON_CSS.to_string())
             .set_mime(mime::TEXT_CSS_UTF_8)),
         Ok(path) if path.starts_with("octicons.eot") => {
-            Ok(Response::new(200).body(OCTICON_EOT).set_mime(
+            Ok(Response::new(StatusCode::Ok).body(OCTICON_EOT).set_mime(
                 "application/vnd.ms-fontobject"
                     .parse()
                     .unwrap_or(mime::FONT_WOFF),
             ))
         }
-        Ok(path) if path.starts_with("octicons.svg") => Ok(Response::new(200)
+        Ok(path) if path.starts_with("octicons.svg") => Ok(Response::new(StatusCode::Ok)
             .body_string(OCTICON_SVG.to_string())
             .set_mime(mime::IMAGE_SVG)),
-        Ok(path) if path.starts_with("octicons.ttf") => Ok(Response::new(200)
+        Ok(path) if path.starts_with("octicons.ttf") => Ok(Response::new(StatusCode::Ok)
             .body(OCTICON_TTF)
             .set_mime("font/ttf".parse().unwrap())),
-        Ok(path) if path.starts_with("octicons.woff2") => Ok(Response::new(200)
+        Ok(path) if path.starts_with("octicons.woff2") => Ok(Response::new(StatusCode::Ok)
             .body(OCTICON_WOFF2)
             .set_mime(mime::FONT_WOFF2)),
-        Ok(path) if path.starts_with("octicons.woff") => Ok(Response::new(200)
+        Ok(path) if path.starts_with("octicons.woff") => Ok(Response::new(StatusCode::Ok)
             .body(OCTICON_WOFF)
             .set_mime(mime::FONT_WOFF)),
-        _ => Ok(Response::new(404)
+        _ => Ok(Response::new(StatusCode::NotFound)
             .body_string("This file does not exist".to_string())
             .set_mime(mime::TEXT_HTML)),
     }
@@ -51,7 +51,7 @@ pub async fn octicons(
 pub async fn style(
     _req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
 ) -> tide::Result {
-    Ok(Response::new(200)
+    Ok(Response::new(StatusCode::Ok)
         .body_string(STYLE_CSS.to_string())
         .set_mime(mime::TEXT_CSS_UTF_8))
 }
