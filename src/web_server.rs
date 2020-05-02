@@ -3,7 +3,7 @@ use horrorshow::prelude::*;
 use tide;
 use tide::{http::StatusCode, log, Request, Response, Server, Status};
 
-use crate::content_finder::ContentFinder;
+use crate::content_finder::{ContentError, ContentFinder};
 use crate::markdown_converter::MarkdownConverter;
 use crate::static_files;
 
@@ -83,7 +83,6 @@ fn markdown_html(file_name: &str, md_content: &str) -> String {
     )
 }
 
-// TODO: Figure out how to return HTML errors
 /// The error HTML indicating the requested file is not markdown
 /// and therefore can't be rendered.
 fn not_markdown_html(file: &str) -> String {
@@ -109,16 +108,12 @@ async fn render_readme(
 ) -> tide::Result {
     let state = req.state();
 
-    let contents = state.content_finder.content_for("README.md")?;
-    // .map_err(|_| Response::new(StatusCode::NotFound).body_string("Could not find README.md".to_string()))?;
+    let contents = state
+        .content_finder
+        .content_for("README.md")
+        .with_status(|| StatusCode::NotFound)?;
 
     let converted = state.markdown_converter.convert_markdown(&contents).await?;
-    // .map_err(|_err| {
-    //     Response::new(StatusCode::InternalServerError).body_string(format!(
-    //         "Could not convert the following markdown:\n {}",
-    //         &contents
-    //     ))
-    // })?;
 
     let resp = base_html("README.md", &markdown_html("README.md", &converted));
 
@@ -136,29 +131,23 @@ async fn render_markdown_path(
     let path = req.uri().path();
     let file = path.split('/').last().unwrap_or("rs-readme");
 
-    let contents = state
-        .content_finder
-        .content_for(&format!(".{}", path))
-        .status(StatusCode::BadRequest)?;
-    // .map_err(|err| match err {
-    //     ContentError::NotMarkdown => Response::new(StatusCode::BadRequest)
-    //         .body_string(base_html(
-    //             "rs-readme",
-    //             &not_markdown_html(&req.uri().path()),
-    //         ))
-    //         .set_mime(mime::TEXT_HTML_UTF_8),
-    //     ContentError::CouldNotFetch => {
-    //         Response::new(StatusCode::NotFound).body_string(format!("Could not find {}", req.uri().path()))
-    //     }
-    // })?;
+    let contents = match state.content_finder.content_for(&format!(".{}", path)) {
+        Ok(contents) => contents,
+        Err(ContentError::NotMarkdown) => {
+            return Ok(Response::new(StatusCode::BadRequest)
+                .body_string(base_html(
+                    "rs-readme",
+                    &not_markdown_html(&req.uri().path()),
+                ))
+                .set_mime(mime::TEXT_HTML_UTF_8))
+        }
+        Err(ContentError::CouldNotFetch(resource)) => {
+            return Ok(Response::new(StatusCode::NotFound)
+                .body_string(format!("{}", ContentError::CouldNotFetch(resource))))
+        }
+    };
 
     let converted = state.markdown_converter.convert_markdown(&contents).await?;
-    // .map_err(|_| {
-    //     Response::new(StatusCode::InternalServerError).body_string(format!(
-    //         "Could not convert the following markdown:\n {}",
-    //         &contents
-    //     ))
-    // })?;
 
     let resp = base_html(file, &markdown_html(file, &converted));
 

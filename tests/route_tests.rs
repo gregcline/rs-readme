@@ -234,57 +234,128 @@ async fn calls_content_finder_with_file_path() {
         .contains("content for: ./test_dir/a.md"));
 }
 
-// Need to figure out how to do html responses for errors
-// #[async_std::test]
-// async fn returns_400_for_non_md_file() {
-//     // Create mock
-//     struct MockFinderError;
+#[async_std::test]
+async fn returns_400_for_non_md_file() {
+    // Create mock
+    struct MockFinderError;
 
-//     impl ContentFinder for MockFinderError {
-//         fn content_for(&self, _resource: &str) -> Result<String, ContentError> {
-//             Err(ContentError::NotMarkdown)
-//         }
-//     }
+    impl ContentFinder for MockFinderError {
+        fn content_for(&self, _resource: &str) -> Result<String, ContentError> {
+            Err(ContentError::NotMarkdown)
+        }
+    }
 
-//     // Setup
-//     let state = State::new(MockConverter, MockFinderError);
-//     let app = build_app(state);
-//     let mut server = make_server(app).unwrap();
+    // Setup
+    let state = State::new(MockConverter, MockFinderError);
+    let app = build_app(state);
+    let mut server = make_server(app).unwrap();
 
-//     // Request
-//     let req = Request::new(Method::Get, Url::parse("http://localhost/foo.txt").unwrap());
-//     let res = server.simulate(req).unwrap();
+    // Request
+    let req = Request::new(Method::Get, Url::parse("http://localhost/foo.txt").unwrap());
+    let res = server.simulate(req).unwrap();
 
-//     // Assert
-//     let status = res.status();
-//     assert_eq!(status, 400);
+    // Assert
+    let status = res.status();
+    assert_eq!(status, 400);
 
-//     let mime = res
-//         .header(&HeaderName::from_str("content-type").unwrap())
-//         .expect("Couldn't get the content-type header")
-//         .get(0)
-//         .expect("Couldn't get the first value of content-type");
-//     assert_eq!(mime, "text/html; charset=utf-8");
+    let mime = res
+        .header(&HeaderName::from_str("content-type").unwrap())
+        .expect("Couldn't get the content-type header")
+        .get(0)
+        .expect("Couldn't get the first value of content-type");
+    assert_eq!(mime, "text/html; charset=utf-8");
 
-//     let body = res.body_string().await.unwrap();
-//     let expected_body = "\
-// <!DOCTYPE html>\
-// <html>\
-//   <head>\
-//   <link rel=\"stylesheet\" href=\"/static/octicons/octicons.css\">\
-//   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css\">\
-//   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css\">\
-//   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
-//   <link rel=\"stylesheet\" href=\"/static/style.css\">\
-//     <title>rs-readme</title>\
-//   </head>\
-//   <body>\
-//     <h1>Not a Markdown File</h1>\
-//     <p><strong>/foo.txt</strong> is not a markdown file and cannot be rendered</p>\
-//   </body>\
-// </html>";
-//     assert_eq!(body, expected_body);
-// }
+    let body = res.body_string().await.unwrap();
+    let expected_body = "\
+<!DOCTYPE html>\
+<html>\
+  <head>\
+  <link rel=\"stylesheet\" href=\"/static/octicons/octicons.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/frameworks-146fab5ea30e8afac08dd11013bb4ee0.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/site-897ad5fdbe32a5cd67af5d1bdc68a292.css\">\
+  <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
+  <link rel=\"stylesheet\" href=\"/static/style.css\">\
+    <title>rs-readme</title>\
+  </head>\
+  <body>\
+    <h1>Not a Markdown File</h1>\
+    <p><strong>/foo.txt</strong> is not a markdown file and cannot be rendered</p>\
+  </body>\
+</html>";
+    assert_eq!(body, expected_body);
+}
+
+#[async_std::test]
+async fn returns_404_for_missing_readme() {
+    // Create mock
+    struct MockFinderError;
+
+    impl ContentFinder for MockFinderError {
+        fn content_for(&self, resource: &str) -> Result<String, ContentError> {
+            Err(ContentError::CouldNotFetch(resource.to_string()))
+        }
+    }
+
+    // Setup
+    let state = State::new(MockConverter, MockFinderError);
+    let app = build_app(state);
+    let mut server = make_server(app).unwrap();
+
+    // Request
+    let req = Request::new(Method::Get, Url::parse("http://localhost/").unwrap());
+    let res = server.simulate(req).unwrap();
+
+    // Assert
+    let status = res.status();
+    assert_eq!(status, 404);
+
+    let mime = res
+        .header(&HeaderName::from_str("content-type").unwrap())
+        .expect("Couldn't get the content-type header")
+        .get(0)
+        .expect("Couldn't get the first value of content-type");
+    assert_eq!(mime, "text/plain");
+
+    let body = res.body_string().await.unwrap();
+    let expected_body = "Could not find README.md";
+    assert_eq!(body, expected_body);
+}
+
+#[async_std::test]
+async fn returns_404_for_missing_file() {
+    // Create mock
+    struct MockFinderError;
+
+    impl ContentFinder for MockFinderError {
+        fn content_for(&self, resource: &str) -> Result<String, ContentError> {
+            Err(ContentError::CouldNotFetch(resource.to_string()))
+        }
+    }
+
+    // Setup
+    let state = State::new(MockConverter, MockFinderError);
+    let app = build_app(state);
+    let mut server = make_server(app).unwrap();
+
+    // Request
+    let req = Request::new(Method::Get, Url::parse("http://localhost/foo.md").unwrap());
+    let res = server.simulate(req).unwrap();
+
+    // Assert
+    let status = res.status();
+    assert_eq!(status, 404);
+
+    let mime = res
+        .header(&HeaderName::from_str("content-type").unwrap())
+        .expect("Couldn't get the content-type header")
+        .get(0)
+        .expect("Couldn't get the first value of content-type");
+    assert_eq!(mime, "text/plain; charset=utf-8");
+
+    let body = res.body_string().await.unwrap();
+    let expected_body = "Could not find foo.md";
+    assert_eq!(body, expected_body);
+}
 
 #[async_std::test]
 async fn static_content_returns_appropriate_files() {
