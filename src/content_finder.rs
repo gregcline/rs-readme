@@ -15,7 +15,7 @@ use log::{error, warn};
 #[derive(Debug, PartialEq)]
 pub enum ContentError {
     /// The requested content couldn't be fetched (probably a file error)
-    CouldNotFetch,
+    CouldNotFetch(String),
 
     /// The requested content wasn't markdown
     NotMarkdown,
@@ -24,7 +24,9 @@ pub enum ContentError {
 impl fmt::Display for ContentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ContentError::CouldNotFetch => write!(f, "Could not find the resource"),
+            ContentError::CouldNotFetch(resource) => {
+                write!(f, "Could not find {}", resource.replacen("./", "", 1))
+            }
             ContentError::NotMarkdown => write!(f, "The file was not markdown"),
         }
     }
@@ -74,7 +76,7 @@ impl ContentFinder for FileFinder {
                 path.to_string_lossy(),
                 err
             );
-            ContentError::CouldNotFetch
+            ContentError::CouldNotFetch(resource.to_string())
         })?;
 
         let mut contents = String::new();
@@ -84,7 +86,7 @@ impl ContentFinder for FileFinder {
                 path.to_string_lossy(),
                 err
             );
-            ContentError::CouldNotFetch
+            ContentError::CouldNotFetch(resource.to_string())
         })?;
 
         Ok(contents)
