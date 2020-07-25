@@ -1,7 +1,10 @@
+use std::sync::Arc;
 use horrorshow::helper::doctype;
 use horrorshow::prelude::*;
+use http_types::mime;
 use tide;
 use tide::{http::StatusCode, log, Request, Response, Server, Status};
+use tide::utils::After;
 
 use crate::content_finder::{ContentError, ContentFinder};
 use crate::markdown_converter::MarkdownConverter;
@@ -104,7 +107,7 @@ fn not_markdown_html(file: &str) -> String {
 /// message for it and lets the root of the website render `README.md`. It might not be necessary
 /// though, maybe we could just redirect `/` to `/README.md`.
 async fn render_readme(
-    req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+    req: Request<Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>>,
 ) -> tide::Result {
     let state = req.state();
 
@@ -117,33 +120,37 @@ async fn render_readme(
 
     let resp = base_html("README.md", &markdown_html("README.md", &converted));
 
-    Ok(Response::new(StatusCode::Ok)
-        .body_string(resp)
-        .set_mime(mime::TEXT_HTML_UTF_8))
+    Ok(Response::builder(StatusCode::Ok)
+        .body(resp)
+        .content_type(mime::HTML)
+        .build())
 }
 
 /// Renders any given file path containing markdown as HTML.
 async fn render_markdown_path(
-    req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+    req: Request<Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>>,
 ) -> tide::Result {
     let state = req.state();
 
-    let path = req.uri().path();
+    let path = req.url().path();
     let file = path.split('/').last().unwrap_or("rs-readme");
 
     let contents = match state.content_finder.content_for(&format!(".{}", path)) {
         Ok(contents) => contents,
         Err(ContentError::NotMarkdown) => {
-            return Ok(Response::new(StatusCode::BadRequest)
-                .body_string(base_html(
+            return Ok(Response::builder(StatusCode::BadRequest)
+                .body(base_html(
                     "rs-readme",
-                    &not_markdown_html(&req.uri().path()),
+                    &not_markdown_html(&req.url().path()),
                 ))
-                .set_mime(mime::TEXT_HTML_UTF_8))
+                .content_type(mime::HTML)
+                .build())
         }
         Err(ContentError::CouldNotFetch(resource)) => {
-            return Ok(Response::new(StatusCode::NotFound)
-                .body_string(format!("{}", ContentError::CouldNotFetch(resource))))
+            return Ok(Response::builder(StatusCode::NotFound)
+                .body(format!("{}", ContentError::CouldNotFetch(resource)))
+                .content_type(mime::HTML)
+                .build())
         }
     };
 
@@ -151,20 +158,29 @@ async fn render_markdown_path(
 
     let resp = base_html(file, &markdown_html(file, &converted));
 
-    Ok(Response::new(StatusCode::Ok)
-        .body_string(resp)
-        .set_mime(mime::TEXT_HTML_UTF_8))
+    Ok(Response::builder(StatusCode::Ok)
+        .body(resp)
+        .content_type(mime::HTML)
+        .build())
 }
 
 /// Builds a `tide::Server` with the appropriate endpoint mappings.
 pub fn build_app(
-    state: State<
+    state: Arc<State<
         impl MarkdownConverter + Send + Sync + 'static,
         impl ContentFinder + Send + Sync + 'static,
-    >,
-) -> Server<State<impl MarkdownConverter, impl ContentFinder>> {
+    >>,
+) -> Server<Arc<State<impl MarkdownConverter, impl ContentFinder>>> {
     let mut app = Server::with_state(state);
     app.middleware(log::LogMiddleware::new());
+    app.middleware(After(|mut res: Response| async move {
+        if let Some(_) = res.downcast_error::<ContentError>() {
+            res.set_status(StatusCode::NotFound);
+            res.set_content_type(mime::HTML);
+            res.set_body("Could not find README.md");
+        }
+        Ok(res)
+    }));
     app.at("").get(render_readme);
     app.at("/static/octicons/:file").get(static_files::octicons);
     app.at("/static/style.css").get(static_files::style);

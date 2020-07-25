@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use structopt::StructOpt;
 
 use rs_readme::{build_app, Args, Converter, FileFinder, State};
@@ -15,7 +16,7 @@ async fn main() -> std::result::Result<(), std::io::Error> {
         FileFinder::new(args.folder),
     );
 
-    let app = build_app(state);
+    let app = build_app(Arc::new(state));
 
     println!("Listening on {}", addr);
     app.listen(addr).await
