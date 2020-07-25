@@ -15,23 +15,22 @@ path = "src/lib.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tide = "0.8.0"
+tide = "0.12.0"
 surf = "1.0.3"
 serde = "1.0.105"
 serde_derive = "1.0.105"
-futures = "0.3.4"
-async-std = { version = "1.5.0", features = [ "attributes" ]}
+futures = "0.3.5"
+async-std = { version = "1.6.2", features = [ "attributes" ]}
 log = "0.4.8"
 pretty_env_logger = "0.4.0"
 async-trait = "0.1.26"
 horrorshow = "0.8.3"
-mime = "0.3.16"
+http-types = "2.3.0"
 structopt = "0.3.12"
 
 [dev-dependencies]
 mockito = "0.23.3"
 http-service-mock = "0.5.0"
-http-types = "1.2.0"
 http-service = "0.5.0"
 pretty_assertions = "0.6.1"
 

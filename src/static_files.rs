@@ -1,6 +1,8 @@
 use super::{
     content_finder::ContentFinder, markdown_converter::MarkdownConverter, web_server::State,
 };
+use std::sync::Arc;
+use http_types::mime;
 use tide::{http::StatusCode, Request, Response};
 
 // This will bundle the necessary files in the final binary so we don't have to worry about
@@ -16,42 +18,52 @@ const STYLE_CSS: &str = include_str!("../static/style.css");
 
 /// The endpoint to return files related to octicons
 pub async fn octicons(
-    req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+    req: Request<Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>>,
 ) -> tide::Result {
     match req.param::<String>("file") {
-        Ok(path) if path.starts_with("octicons.css") => Ok(Response::new(StatusCode::Ok)
-            .body_string(OCTICON_CSS.to_string())
-            .set_mime(mime::TEXT_CSS_UTF_8)),
+        Ok(path) if path.starts_with("octicons.css") => Ok(Response::builder(StatusCode::Ok)
+            .body(OCTICON_CSS.to_string())
+            .content_type(mime::CSS)
+            .build()),
         Ok(path) if path.starts_with("octicons.eot") => {
-            Ok(Response::new(StatusCode::Ok).body(OCTICON_EOT).set_mime(
-                "application/vnd.ms-fontobject"
-                    .parse()
-                    .unwrap_or(mime::FONT_WOFF),
-            ))
+            Ok(Response::builder(StatusCode::Ok)
+                .body(OCTICON_EOT)
+                .content_type("application/vnd.ms-fontobject".parse().unwrap_or(mime::ANY))
+                .build())
         }
-        Ok(path) if path.starts_with("octicons.svg") => Ok(Response::new(StatusCode::Ok)
-            .body_string(OCTICON_SVG.to_string())
-            .set_mime(mime::IMAGE_SVG)),
-        Ok(path) if path.starts_with("octicons.ttf") => Ok(Response::new(StatusCode::Ok)
+        Ok(path) if path.starts_with("octicons.svg") =>
+            Ok(Response::builder(StatusCode::Ok)
+            .body(OCTICON_SVG.to_string())
+            .content_type(mime::SVG)
+            .build()),
+        Ok(path) if path.starts_with("octicons.ttf") =>
+            Ok(Response::builder(StatusCode::Ok)
             .body(OCTICON_TTF)
-            .set_mime("font/ttf".parse().unwrap())),
-        Ok(path) if path.starts_with("octicons.woff2") => Ok(Response::new(StatusCode::Ok)
+            .content_type("font/ttf".parse().unwrap_or(mime::ANY))
+            .build()),
+        Ok(path) if path.starts_with("octicons.woff2") =>
+            Ok(Response::builder(StatusCode::Ok)
             .body(OCTICON_WOFF2)
-            .set_mime(mime::FONT_WOFF2)),
-        Ok(path) if path.starts_with("octicons.woff") => Ok(Response::new(StatusCode::Ok)
+            .content_type("font/woff2".parse().unwrap_or(mime::ANY))
+            .build()),
+        Ok(path) if path.starts_with("octicons.woff") =>
+            Ok(Response::builder(StatusCode::Ok)
             .body(OCTICON_WOFF)
-            .set_mime(mime::FONT_WOFF)),
-        _ => Ok(Response::new(StatusCode::NotFound)
-            .body_string("This file does not exist".to_string())
-            .set_mime(mime::TEXT_HTML)),
+            .content_type("font/woff".parse().unwrap_or(mime::ANY))
+            .build()),
+        _ => Ok(Response::builder(StatusCode::NotFound)
+            .body("This file does not exist".to_string())
+            .content_type(mime::HTML)
+            .build()),
     }
 }
 
 /// The endpoint to return our styles
 pub async fn style(
-    _req: Request<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+    _req: Request<Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>>,
 ) -> tide::Result {
-    Ok(Response::new(StatusCode::Ok)
-        .body_string(STYLE_CSS.to_string())
-        .set_mime(mime::TEXT_CSS_UTF_8))
+    Ok(Response::builder(StatusCode::Ok)
+        .body(STYLE_CSS.to_string())
+        .content_type(mime::CSS)
+        .build())
 }

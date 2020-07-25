@@ -1,15 +1,13 @@
 // Create mock
 use async_std::io::prelude::*;
 use async_trait::async_trait;
-use http_service_mock::make_server;
-use http_types::headers::HeaderName;
+use http_types::mime;
 use pretty_assertions::assert_eq;
 use rs_readme::*;
 use rs_readme::{ContentError, ContentFinder, MarkdownConverter};
 use std::collections::HashSet;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use tide::http::{Method, Request, Url};
+use tide::http::{Method, Request, Url, Response};
 
 /// A mock [`MarkdownConverter`] that returns:
 /// `<h1>A Readme</h1>`
@@ -76,24 +74,21 @@ impl MarkdownConverter for MockAssertSeen {
 async fn index_wraps_in_html() {
     // Setup
     let state = State::new(MockConverter, MockFinder);
-    let app = build_app(state);
-    let mut server = make_server(app).unwrap();
+    let app = build_app(Arc::new(state));
 
     // Request
     let req = Request::new(Method::Get, Url::parse("http://localhost/").unwrap());
-    let res = server.simulate(req).unwrap();
+    let mut res: Response = app.respond(req).await.unwrap();
 
     // Assert
     let status = res.status();
     assert_eq!(status, 200);
 
     let mime = res
-        .header(&HeaderName::from_str("content-type").unwrap())
-        .expect("Couldn't get the content-type header")
-        .get(0)
-        .expect("Couldn't get the first value of content-type");
+        .content_type()
+        .expect("Couldn't get the content-type header");
 
-    assert_eq!(mime, "text/html; charset=utf-8");
+    assert_eq!(mime, mime::HTML);
 
     let body = res.body_string().await.unwrap();
     let expected_body = "\
@@ -137,24 +132,21 @@ async fn index_wraps_in_html() {
 async fn non_index_wraps_in_html() {
     // Setup
     let state = State::new(MockConverter, MockFinder);
-    let app = build_app(state);
-    let mut server = make_server(app).unwrap();
+    let app = build_app(Arc::new(state));
 
     // Request
     let req = Request::new(Method::Get, Url::parse("http://localhost/foo.md").unwrap());
-    let res = server.simulate(req).unwrap();
+    let mut res: Response = app.respond(req).await.unwrap();
 
     // Assert
     let status = res.status();
     assert_eq!(status, 200);
 
     let mime = res
-        .header(&HeaderName::from_str("content-type").unwrap())
-        .expect("Couldn't get the content-type header")
-        .get(0)
-        .expect("Couldn't get the first value of content-type");
+        .content_type()
+        .expect("Couldn't get the content-type header");
 
-    assert_eq!(mime, "text/html; charset=utf-8");
+    assert_eq!(mime, mime::HTML);
 
     let body = res.body_string().await.unwrap();
     let expected_body = "\
@@ -203,26 +195,23 @@ async fn calls_content_finder_with_file_path() {
         MockAssertSeen::new(converter.clone()),
         MockAssertSeen::new(finder.clone()),
     );
-    let app = build_app(state);
-    let mut server = make_server(app).unwrap();
+    let app = build_app(Arc::new(state));
 
     // Request
     let req = Request::new(
         Method::Get,
         Url::parse("http://localhost/test_dir/a.md").unwrap(),
     );
-    let res = server.simulate(req).unwrap();
+    let res: Response = app.respond(req).await.unwrap();
 
     // Assert
     let status = res.status();
     assert_eq!(status, 200);
 
     let mime = res
-        .header(&HeaderName::from_str("content-type").unwrap())
-        .expect("Couldn't get the content-type header")
-        .get(0)
-        .expect("Couldn't get the first value of content-type");
-    assert_eq!(mime, "text/html; charset=utf-8");
+        .content_type()
+        .expect("Couldn't get the content-type header");
+    assert_eq!(mime, mime::HTML);
 
     assert!(finder
         .lock()
@@ -247,23 +236,20 @@ async fn returns_400_for_non_md_file() {
 
     // Setup
     let state = State::new(MockConverter, MockFinderError);
-    let app = build_app(state);
-    let mut server = make_server(app).unwrap();
+    let app = build_app(Arc::new(state));
 
     // Request
     let req = Request::new(Method::Get, Url::parse("http://localhost/foo.txt").unwrap());
-    let res = server.simulate(req).unwrap();
+    let mut res: Response = app.respond(req).await.unwrap();
 
     // Assert
     let status = res.status();
     assert_eq!(status, 400);
 
     let mime = res
-        .header(&HeaderName::from_str("content-type").unwrap())
-        .expect("Couldn't get the content-type header")
-        .get(0)
-        .expect("Couldn't get the first value of content-type");
-    assert_eq!(mime, "text/html; charset=utf-8");
+        .content_type()
+        .expect("Couldn't get the content-type header");
+    assert_eq!(mime, mime::HTML);
 
     let body = res.body_string().await.unwrap();
     let expected_body = "\
@@ -298,23 +284,20 @@ async fn returns_404_for_missing_readme() {
 
     // Setup
     let state = State::new(MockConverter, MockFinderError);
-    let app = build_app(state);
-    let mut server = make_server(app).unwrap();
+    let app = build_app(Arc::new(state));
 
     // Request
     let req = Request::new(Method::Get, Url::parse("http://localhost/").unwrap());
-    let res = server.simulate(req).unwrap();
+    let mut res: Response = app.respond(req).await.unwrap();
 
     // Assert
     let status = res.status();
     assert_eq!(status, 404);
 
     let mime = res
-        .header(&HeaderName::from_str("content-type").unwrap())
-        .expect("Couldn't get the content-type header")
-        .get(0)
-        .expect("Couldn't get the first value of content-type");
-    assert_eq!(mime, "text/plain");
+        .content_type()
+        .expect("Couldn't get the content-type header");
+    assert_eq!(mime, mime::HTML);
 
     let body = res.body_string().await.unwrap();
     let expected_body = "Could not find README.md";
@@ -334,23 +317,20 @@ async fn returns_404_for_missing_file() {
 
     // Setup
     let state = State::new(MockConverter, MockFinderError);
-    let app = build_app(state);
-    let mut server = make_server(app).unwrap();
+    let app = build_app(Arc::new(state));
 
     // Request
     let req = Request::new(Method::Get, Url::parse("http://localhost/foo.md").unwrap());
-    let res = server.simulate(req).unwrap();
+    let mut res: Response = app.respond(req).await.unwrap();
 
     // Assert
     let status = res.status();
     assert_eq!(status, 404);
 
     let mime = res
-        .header(&HeaderName::from_str("content-type").unwrap())
-        .expect("Couldn't get the content-type header")
-        .get(0)
-        .expect("Couldn't get the first value of content-type");
-    assert_eq!(mime, "text/plain; charset=utf-8");
+        .content_type()
+        .expect("Couldn't get the content-type header");
+    assert_eq!(mime, mime::HTML);
 
     let body = res.body_string().await.unwrap();
     let expected_body = "Could not find foo.md";
@@ -361,16 +341,15 @@ async fn returns_404_for_missing_file() {
 async fn static_content_returns_appropriate_files() {
     // Setup
     let state = State::new(MockConverter, MockFinder);
-    let app = build_app(state);
-    let mut server = make_server(app).unwrap();
+    let app = build_app(Arc::new(state));
 
     // Expected results
     // (path, status, mime, body)
     let expected = vec![
         (
             "/static/octicons/octicons.css",
-            200,
-            "text/css; charset=utf-8",
+            200 as u16,
+            mime::CSS,
             {
                 let mut vec = Vec::new();
                 vec.extend_from_slice(include_bytes!("../static/octicons/octicons.css"));
@@ -380,29 +359,29 @@ async fn static_content_returns_appropriate_files() {
         (
             "/static/octicons/octicons.eot",
             200,
-            "application/vnd.ms-fontobject",
+            "application/vnd.ms-fontobject".parse().unwrap(),
             {
                 let mut vec = Vec::new();
                 vec.extend_from_slice(include_bytes!("../static/octicons/octicons.eot"));
                 vec
             },
         ),
-        ("/static/octicons/octicons.svg", 200, "image/svg+xml", {
+        ("/static/octicons/octicons.svg", 200, mime::SVG, {
             let mut vec = Vec::new();
             vec.extend_from_slice(include_bytes!("../static/octicons/octicons.svg"));
             vec
         }),
-        ("/static/octicons/octicons.ttf", 200, "font/ttf", {
+        ("/static/octicons/octicons.ttf", 200, "font/ttf".parse().unwrap(), {
             let mut vec = Vec::new();
             vec.extend_from_slice(include_bytes!("../static/octicons/octicons.ttf"));
             vec
         }),
-        ("/static/octicons/octicons.woff", 200, "font/woff", {
+        ("/static/octicons/octicons.woff", 200, "font/woff".parse().unwrap(), {
             let mut vec = Vec::new();
             vec.extend_from_slice(include_bytes!("../static/octicons/octicons.woff"));
             vec
         }),
-        ("/static/octicons/octicons.woff2", 200, "font/woff2", {
+        ("/static/octicons/octicons.woff2", 200, "font/woff2".parse().unwrap(), {
             let mut vec = Vec::new();
             vec.extend_from_slice(include_bytes!("../static/octicons/octicons.woff2"));
             vec
@@ -415,18 +394,16 @@ async fn static_content_returns_appropriate_files() {
             Method::Get,
             Url::parse(&format!("http://localhost{}", *path)).unwrap(),
         );
-        let mut res = server.simulate(req).unwrap();
+        let mut res: Response = app.respond(req).await.unwrap();
 
         // Assert
         let res_status = res.status();
         assert_eq!(&res_status, status, "path: {}", path);
 
         let res_mime = res
-            .header(&HeaderName::from_str("content-type").unwrap())
-            .expect("Couldn't get the content-type header")
-            .get(0)
-            .expect("Couldn't get the first value of content-type");
-        assert_eq!(res_mime, mime, "path: {}", path);
+            .content_type()
+            .expect(&format!("Couldn't get the content-type header, path: {}", path));
+        assert_eq!(res_mime, *mime, "path: {}", path);
 
         let mut res_body = Vec::with_capacity(1);
         res.take_body().read_to_end(&mut res_body).await.unwrap();
@@ -439,26 +416,23 @@ async fn static_content_returns_appropriate_files() {
 async fn styles_returns_right_css() {
     // Setup
     let state = State::new(MockConverter, MockFinder);
-    let app = build_app(state);
-    let mut server = make_server(app).unwrap();
+    let app = build_app(Arc::new(state));
 
     // Make request
     let req = Request::new(
         Method::Get,
         Url::parse("http://localhost/static/style.css").unwrap(),
     );
-    let res = server.simulate(req).unwrap();
+    let mut res: Response = app.respond(req).await.unwrap();
 
     // Assert
     let res_status = res.status();
     assert_eq!(res_status, 200);
 
     let mime = res
-        .header(&HeaderName::from_str("content-type").unwrap())
-        .expect("Couldn't get the content-type header")
-        .get(0)
-        .expect("Couldn't get the first value of content-type");
-    assert_eq!(mime, "text/css; charset=utf-8");
+        .content_type()
+        .expect("Couldn't get the content-type header");
+    assert_eq!(mime, mime::CSS);
 
     let body = res.body_string().await.unwrap();
 
