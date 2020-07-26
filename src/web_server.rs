@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use async_trait::async_trait;
 use horrorshow::helper::doctype;
 use horrorshow::prelude::*;
 use http_types::mime;
+use std::sync::Arc;
 use tide;
-use tide::{http::StatusCode, log, Request, Response, Server, Status};
-use tide::utils::After;
+use tide::{http::StatusCode, log, Middleware, Next, Request, Response, Server, Status};
 
 use crate::content_finder::{ContentError, ContentFinder};
 use crate::markdown_converter::MarkdownConverter;
@@ -88,14 +88,48 @@ fn markdown_html(file_name: &str, md_content: &str) -> String {
 
 /// The error HTML indicating the requested file is not markdown
 /// and therefore can't be rendered.
-fn not_markdown_html(file: &str) -> String {
+fn not_markdown_html(title: &str, file: &str) -> String {
     format!(
         "{}",
         html! {
-            h1 : "Not a Markdown File";
-            p {
-                strong : file;
-                : " is not a markdown file and cannot be rendered";
+            : doctype::HTML;
+            html {
+                head {
+                    title : title;
+                }
+                body {
+                    h1 : "Not a Markdown File";
+                    p {
+                        strong : file;
+                        : " is not a markdown file and cannot be rendered";
+                    }
+                }
+        }}
+    )
+}
+
+/// The error HTML indicating the requested file cannot be found.
+fn file_not_found(title: &str, file: &str) -> String {
+    format!(
+        "{}",
+        html! {
+            : doctype::HTML;
+            html {
+                head {
+                    title : title;
+                }
+                body {
+                    h1 {
+                        : "Couldn't find ";
+                        : format!("{}", file);
+                    }
+                     p {
+                         : "For the index page ";
+                         em : "rs-readme";
+                         : " will look for a file named README in the root folder. Otherwise it looks for an exact file name.";
+                     }
+
+                }
             }
         }
     )
@@ -107,7 +141,9 @@ fn not_markdown_html(file: &str) -> String {
 /// message for it and lets the root of the website render `README.md`. It might not be necessary
 /// though, maybe we could just redirect `/` to `/README.md`.
 async fn render_readme(
-    req: Request<Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>>,
+    req: Request<
+        Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+    >,
 ) -> tide::Result {
     let state = req.state();
 
@@ -128,31 +164,16 @@ async fn render_readme(
 
 /// Renders any given file path containing markdown as HTML.
 async fn render_markdown_path(
-    req: Request<Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>>,
+    req: Request<
+        Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+    >,
 ) -> tide::Result {
     let state = req.state();
 
     let path = req.url().path();
     let file = path.split('/').last().unwrap_or("rs-readme");
 
-    let contents = match state.content_finder.content_for(&format!(".{}", path)) {
-        Ok(contents) => contents,
-        Err(ContentError::NotMarkdown) => {
-            return Ok(Response::builder(StatusCode::BadRequest)
-                .body(base_html(
-                    "rs-readme",
-                    &not_markdown_html(&req.url().path()),
-                ))
-                .content_type(mime::HTML)
-                .build())
-        }
-        Err(ContentError::CouldNotFetch(resource)) => {
-            return Ok(Response::builder(StatusCode::NotFound)
-                .body(format!("{}", ContentError::CouldNotFetch(resource)))
-                .content_type(mime::HTML)
-                .build())
-        }
-    };
+    let contents = state.content_finder.content_for(&format!(".{}", path))?;
 
     let converted = state.markdown_converter.convert_markdown(&contents).await?;
 
@@ -164,23 +185,52 @@ async fn render_markdown_path(
         .build())
 }
 
+struct ErrorMiddleware {}
+
+impl ErrorMiddleware {
+    fn not_markdown(&self, path: &str) -> tide::Result {
+        Ok(Response::builder(StatusCode::BadRequest)
+            .body(not_markdown_html("rs-readme", path))
+            .content_type(mime::HTML)
+            .build())
+    }
+
+    fn not_found(&self, resource: &str) -> tide::Result {
+        Ok(Response::builder(StatusCode::NotFound)
+            .body(file_not_found("rs-readme", resource))
+            .content_type(mime::HTML)
+            .build())
+    }
+}
+
+#[async_trait]
+impl<State: Clone + Send + Sync + 'static> Middleware<State> for ErrorMiddleware {
+    async fn handle(&self, req: Request<State>, next: Next<'_, State>) -> tide::Result {
+        let url = req.url().clone();
+        let res = next.run(req).await;
+        if let Some(err) = res.downcast_error::<ContentError>() {
+            match err {
+                ContentError::NotMarkdown => self.not_markdown(url.path()),
+                ContentError::CouldNotFetch(resource) => self.not_found(resource),
+            }
+        } else {
+            Ok(res)
+        }
+    }
+}
+
 /// Builds a `tide::Server` with the appropriate endpoint mappings.
 pub fn build_app(
-    state: Arc<State<
-        impl MarkdownConverter + Send + Sync + 'static,
-        impl ContentFinder + Send + Sync + 'static,
-    >>,
+    state: Arc<
+        State<
+            impl MarkdownConverter + Send + Sync + 'static,
+            impl ContentFinder + Send + Sync + 'static,
+        >,
+    >,
 ) -> Server<Arc<State<impl MarkdownConverter, impl ContentFinder>>> {
     let mut app = Server::with_state(state);
     app.middleware(log::LogMiddleware::new());
-    app.middleware(After(|mut res: Response| async move {
-        if let Some(_) = res.downcast_error::<ContentError>() {
-            res.set_status(StatusCode::NotFound);
-            res.set_content_type(mime::HTML);
-            res.set_body("Could not find README.md");
-        }
-        Ok(res)
-    }));
+    app.middleware(ErrorMiddleware {});
     app.at("").get(render_readme);
     app.at("/static/octicons/:file").get(static_files::octicons);
     app.at("/static/style.css").get(static_files::style);
@@ -249,11 +299,17 @@ mod test {
     #[test]
     fn test_not_markdown_html() {
         let expected = "\
+<!DOCTYPE html>\
+<html>\
+<head><title>rs-readme</title></head>\
+<body>\
 <h1>Not a Markdown File</h1>\
 <p><strong>test_file</strong> is not a markdown file and cannot be rendered</p>\
+</body>\
+</html>\
 ";
 
-        let actual = not_markdown_html("test_file");
+        let actual = not_markdown_html("rs-readme", "test_file");
 
         assert_eq!(expected, actual);
     }
