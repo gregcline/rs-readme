@@ -1,10 +1,12 @@
 // Create mock
 use async_std::io::prelude::*;
 use async_trait::async_trait;
+use generic_array::{typenum::U20, GenericArray};
 use http_types::mime;
 use pretty_assertions::assert_eq;
 use rs_readme::*;
 use rs_readme::{ContentError, ContentFinder, MarkdownConverter};
+use sha1::{Digest, Sha1};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tide::http::{Method, Request, Response, Url};
@@ -25,8 +27,13 @@ impl MarkdownConverter for MockConverter {
 struct MockFinder;
 
 impl ContentFinder for MockFinder {
-    fn content_for(&self, _resource: &str) -> Result<String, ContentError> {
-        Ok("# A Readme".to_string())
+    fn content_for(
+        &self,
+        _resource: &str,
+    ) -> Result<(String, GenericArray<u8, U20>), ContentError> {
+        let content = "# A Readme".to_string();
+        let hash = Sha1::digest(&content.as_bytes());
+        Ok((content, hash))
     }
 }
 
@@ -48,13 +55,15 @@ impl MockAssertSeen {
 }
 
 impl ContentFinder for MockAssertSeen {
-    fn content_for(&self, resource: &str) -> Result<String, ContentError> {
+    fn content_for(&self, resource: &str) -> Result<(String, GenericArray<u8, U20>), ContentError> {
         self.seen
             .lock()
             .expect("Could not lock mutex in content_for")
             .insert(resource.to_string());
 
-        Ok(format!("content for: {}", resource).to_string())
+        let content = format!("content for: {}", resource).to_string();
+        let hash = Sha1::digest(&content.as_bytes());
+        Ok((content, hash))
     }
 }
 
@@ -101,6 +110,15 @@ async fn index_wraps_in_html() {
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
   <link rel=\"stylesheet\" href=\"/static/style.css\">\
     <title>README.md</title>\
+    <script>let hash = '';
+                           let event = new EventSource(`//${location.host}/__rs-readme${location.pathname}`);
+                           event.addEventListener('update', (e) => {
+                              let message = JSON.parse(e.data);
+                              if (message.hash !== hash) {
+                                  hash = message.hash;
+                                  document.getElementById('rs-readme-content').innerHTML = message.contents;
+                              }
+                           });</script>\
   </head>\
   <body>\
     <div class=\"page\">\
@@ -113,7 +131,7 @@ async fn index_wraps_in_html() {
                   <span class=\"octicon octicon-book\"></span> \
                   README.md\
                 </h3>\
-                <article class=\"markdown-body entry-content\" itemprop=\"text\">\
+                <article id=\"rs-readme-content\" class=\"markdown-body entry-content\" itemprop=\"text\">\
                   <h1>A Readme</h1>\
                 </article>\
               </div>\
@@ -159,6 +177,15 @@ async fn non_index_wraps_in_html() {
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
   <link rel=\"stylesheet\" href=\"/static/style.css\">\
     <title>foo.md</title>\
+    <script>let hash = '';
+                           let event = new EventSource(`//${location.host}/__rs-readme${location.pathname}`);
+                           event.addEventListener('update', (e) => {
+                              let message = JSON.parse(e.data);
+                              if (message.hash !== hash) {
+                                  hash = message.hash;
+                                  document.getElementById('rs-readme-content').innerHTML = message.contents;
+                              }
+                           });</script>\
   </head>\
   <body>\
     <div class=\"page\">\
@@ -171,7 +198,7 @@ async fn non_index_wraps_in_html() {
                   <span class=\"octicon octicon-book\"></span> \
                   foo.md\
                 </h3>\
-                <article class=\"markdown-body entry-content\" itemprop=\"text\">\
+                <article id=\"rs-readme-content\" class=\"markdown-body entry-content\" itemprop=\"text\">\
                   <h1>A Readme</h1>\
                 </article>\
               </div>\
@@ -229,7 +256,10 @@ async fn returns_400_for_non_md_file() {
     struct MockFinderError;
 
     impl ContentFinder for MockFinderError {
-        fn content_for(&self, _resource: &str) -> Result<String, ContentError> {
+        fn content_for(
+            &self,
+            _resource: &str,
+        ) -> Result<(String, GenericArray<u8, U20>), ContentError> {
             Err(ContentError::NotMarkdown)
         }
     }
@@ -272,7 +302,10 @@ async fn returns_404_for_missing_readme() {
     struct MockFinderError;
 
     impl ContentFinder for MockFinderError {
-        fn content_for(&self, resource: &str) -> Result<String, ContentError> {
+        fn content_for(
+            &self,
+            resource: &str,
+        ) -> Result<(String, GenericArray<u8, U20>), ContentError> {
             Err(ContentError::CouldNotFetch(resource.to_string()))
         }
     }
@@ -315,7 +348,10 @@ async fn returns_404_for_missing_file() {
     struct MockFinderError;
 
     impl ContentFinder for MockFinderError {
-        fn content_for(&self, resource: &str) -> Result<String, ContentError> {
+        fn content_for(
+            &self,
+            resource: &str,
+        ) -> Result<(String, GenericArray<u8, U20>), ContentError> {
             Err(ContentError::CouldNotFetch(resource.to_string()))
         }
     }

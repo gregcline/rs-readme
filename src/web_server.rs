@@ -2,8 +2,11 @@ use async_trait::async_trait;
 use horrorshow::helper::doctype;
 use horrorshow::prelude::*;
 use http_types::mime;
+use serde_json::json;
 use std::sync::Arc;
-use tide::{http::StatusCode, log, Middleware, Next, Request, Response, Server, Status};
+use tide::{
+    http::StatusCode, log, sse::Sender, Middleware, Next, Request, Response, Server, Status,
+};
 
 use crate::content_finder::{ContentError, ContentFinder};
 use crate::markdown_converter::{Converter, MarkdownConverter, MarkdownError};
@@ -53,7 +56,9 @@ where
     }
 }
 
-/// The basic HTML of our page, the `<head>` and CSS and `<body>`
+/// The basic HTML of our page, the `<head>` and CSS and `<body>`.
+/// Also includes the script to subscribe to the Server Sent Events for the page
+/// and update the page if the file changes.
 fn base_html(title: &str, content: &str) -> String {
     format!(
         "{}",
@@ -67,6 +72,17 @@ fn base_html(title: &str, content: &str) -> String {
                     link(rel="stylesheet", href="https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css");
                     link(rel="stylesheet", href="/static/style.css");
                     title : title;
+                    script {
+                        : Raw("let hash = '';
+                           let event = new EventSource(`//${location.host}/__rs-readme${location.pathname}`);
+                           event.addEventListener('update', (e) => {
+                              let message = JSON.parse(e.data);
+                              if (message.hash !== hash) {
+                                  hash = message.hash;
+                                  document.getElementById('rs-readme-content').innerHTML = message.contents;
+                              }
+                           });")
+                    }
                 }
                 body : Raw(content);
             }
@@ -89,7 +105,7 @@ fn markdown_html(file_name: &str, md_content: &str) -> String {
                                         span(class="octicon octicon-book");
                                         : format!(" {}",file_name);
                                     }
-                                    article(class="markdown-body entry-content", itemprop="text") {
+                                    article(id="rs-readme-content", class="markdown-body entry-content", itemprop="text") {
                                         : Raw(md_content);
                                     }
                                 }
@@ -166,7 +182,7 @@ async fn render_readme(
 ) -> tide::Result {
     let state = req.state();
 
-    let contents = state
+    let (contents, _hash) = state
         .content_finder
         .content_for("README.md")
         .with_status(|| StatusCode::NotFound)?;
@@ -194,7 +210,7 @@ async fn render_markdown_path(
     let path = req.url().path();
     let file = path.split('/').last().unwrap_or("rs-readme");
 
-    let contents = state.content_finder.content_for(&format!(".{}", path))?;
+    let (contents, _hash) = state.content_finder.content_for(&format!(".{}", path))?;
 
     let converted = state.markdown_converter.convert_markdown(&contents).await?;
 
@@ -204,6 +220,35 @@ async fn render_markdown_path(
         .body(resp)
         .content_type(mime::HTML)
         .build())
+}
+
+/// Sends an event periodically with the file contents and the SHA1 of the contents.
+/// The front end will update if the hash differs.
+async fn render_page_update(
+    req: Request<
+        Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+    >,
+    sender: Sender,
+) -> Result<(), http_types::Error> {
+    let state = req.state();
+
+    let path = &req.url().path()["/__rs-readme".len()..];
+    let (contents, hash) = if path == "/" {
+        state.content_finder.content_for("./README.md")?
+    } else {
+        state.content_finder.content_for(&format!(".{}", path))?
+    };
+
+    let converted = state.markdown_converter.convert_markdown(&contents).await?;
+
+    let message = json!({
+        "contents": &converted,
+        "hash": &format!("{:x}", &hash),
+    });
+
+    sender.send("update", &message.to_string(), None).await?;
+
+    Ok(())
 }
 
 struct ErrorMiddleware {}
@@ -255,6 +300,10 @@ pub fn build_app(
     app.at("").get(render_readme);
     app.at("/static/octicons/:file").get(static_files::octicons);
     app.at("/static/style.css").get(static_files::style);
+    app.at("/__rs-readme/")
+        .get(tide::sse::endpoint(render_page_update));
+    app.at("/__rs-readme/*")
+        .get(tide::sse::endpoint(render_page_update));
     app.at("/*").get(render_markdown_path);
 
     app
@@ -277,6 +326,15 @@ mod test {
   <link rel=\"stylesheet\" href=\"https://github.githubassets.com/assets/github-c21b6bf71617eeeb67a56b0d48b5bb5c.css\">\
   <link rel=\"stylesheet\" href=\"/static/style.css\">\
     <title>test title</title>\
+    <script>let hash = '';
+                           let event = new EventSource(`//${location.host}/__rs-readme${location.pathname}`);
+                           event.addEventListener('update', (e) => {
+                              let message = JSON.parse(e.data);
+                              if (message.hash !== hash) {
+                                  hash = message.hash;
+                                  document.getElementById('rs-readme-content').innerHTML = message.contents;
+                              }
+                           });</script>\
   </head>\
   <body>\
     Test content\
@@ -301,7 +359,7 @@ mod test {
               <span class=\"octicon octicon-book\"></span> \
               file_name.md\
             </h3>\
-            <article class=\"markdown-body entry-content\" itemprop=\"text\">\
+            <article id=\"rs-readme-content\" class=\"markdown-body entry-content\" itemprop=\"text\">\
               Test content\
             </article>\
           </div>\
