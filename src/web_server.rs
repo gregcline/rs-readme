@@ -229,8 +229,8 @@ pub fn build_app(
     >,
 ) -> Server<Arc<State<impl MarkdownConverter, impl ContentFinder>>> {
     let mut app = Server::with_state(state);
-    app.middleware(log::LogMiddleware::new());
-    app.middleware(ErrorMiddleware {});
+    app.with(log::LogMiddleware::new());
+    app.with(ErrorMiddleware {});
     app.at("").get(render_readme);
     app.at("/static/octicons/:file").get(static_files::octicons);
     app.at("/static/style.css").get(static_files::style);
