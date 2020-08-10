@@ -22,4 +22,9 @@ pub struct Args {
     /// The GitHub context to render in, should be of the form: `user/repo` or `org/repo`
     #[structopt(short, long)]
     pub context: Option<String>,
+
+    /// Whether to run in offline mode, using a built in markdown converter. May
+    /// not be 100% accurate to GitHub
+    #[structopt(short, long)]
+    pub offline: bool,
 }

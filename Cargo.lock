@@ -1439,6 +1439,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca36dea94d187597e104a5c8e4b07576a8a45aa5db48a65e12940d3eb7461f55"
+dependencies = [
+ "bitflags",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1539,6 +1550,7 @@ dependencies = [
  "mockito",
  "pretty_assertions",
  "pretty_env_logger",
+ "pulldown-cmark",
  "serde",
  "serde_derive",
  "structopt",

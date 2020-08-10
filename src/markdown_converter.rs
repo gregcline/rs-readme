@@ -3,7 +3,6 @@ use std::fmt;
 
 use async_trait::async_trait;
 use log::error;
-use surf;
 
 /// Represents an error from the markdown converter.
 #[derive(Debug, PartialEq)]

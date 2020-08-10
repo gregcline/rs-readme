@@ -27,6 +27,7 @@ async-trait = "0.1.26"
 horrorshow = "0.8.3"
 http-types = "2.3.0"
 structopt = "0.3.12"
+pulldown-cmark = { version = "0.7.2", default-features = false }
 
 [dev-dependencies]
 mockito = "0.23.3"

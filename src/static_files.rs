@@ -1,6 +1,4 @@
-use super::{
-    content_finder::ContentFinder, markdown_converter::MarkdownConverter, web_server::State,
-};
+use super::{ContentFinder, MarkdownConverter, State};
 use http_types::mime;
 use std::sync::Arc;
 use tide::{http::StatusCode, Request, Response};
