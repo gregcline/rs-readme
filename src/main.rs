@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use structopt::StructOpt;
 
-use rs_readme::{build_app, Args, Converter, FileFinder, State};
+use rs_readme::{build_app, Args, Converter, Converters, FileFinder, OfflineConverter, State};
 
 #[async_std::main]
 async fn main() -> std::result::Result<(), std::io::Error> {
@@ -11,10 +11,16 @@ async fn main() -> std::result::Result<(), std::io::Error> {
 
     let addr = format!("{}:{}", args.host, args.port);
 
-    let state = State::new(
-        Converter::new("https://api.github.com".to_string(), args.context),
-        FileFinder::new(args.folder),
-    );
+    let converter = if args.offline {
+        Converters::Offline(OfflineConverter::new())
+    } else {
+        Converters::Github(Converter::new(
+            "https://api.github.com".to_string(),
+            args.context,
+        ))
+    };
+
+    let state = State::new(converter, FileFinder::new(args.folder));
 
     let app = build_app(Arc::new(state));
 

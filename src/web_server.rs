@@ -3,12 +3,29 @@ use horrorshow::helper::doctype;
 use horrorshow::prelude::*;
 use http_types::mime;
 use std::sync::Arc;
-use tide;
 use tide::{http::StatusCode, log, Middleware, Next, Request, Response, Server, Status};
 
 use crate::content_finder::{ContentError, ContentFinder};
-use crate::markdown_converter::MarkdownConverter;
+use crate::markdown_converter::{Converter, MarkdownConverter, MarkdownError};
+use crate::offline_converter::OfflineConverter;
 use crate::static_files;
+
+/// Allows us to use either a GitHub API-based converter or an offline converter
+/// through pulldown cmark.
+pub enum Converters {
+    Github(Converter),
+    Offline(OfflineConverter),
+}
+
+#[async_trait]
+impl MarkdownConverter for Converters {
+    async fn convert_markdown(&self, md: &str) -> Result<String, MarkdownError> {
+        match self {
+            Converters::Github(converter) => converter.convert_markdown(&md).await,
+            Converters::Offline(offline) => offline.convert_markdown(&md).await,
+        }
+    }
+}
 
 /// The state necessary to process requests.
 ///
@@ -121,7 +138,7 @@ fn file_not_found(title: &str, file: &str) -> String {
                 body {
                     h1 {
                         : "Couldn't find ";
-                        : format!("{}", file);
+                        : file;
                     }
                      p {
                          : "For the index page ";
@@ -142,7 +159,9 @@ fn file_not_found(title: &str, file: &str) -> String {
 /// though, maybe we could just redirect `/` to `/README.md`.
 async fn render_readme(
     req: Request<
-        Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+        Arc<
+            State<impl MarkdownConverter + Send + Sync + 'static, impl ContentFinder + Send + Sync>,
+        >,
     >,
 ) -> tide::Result {
     let state = req.state();
@@ -165,7 +184,9 @@ async fn render_readme(
 /// Renders any given file path containing markdown as HTML.
 async fn render_markdown_path(
     req: Request<
-        Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
+        Arc<
+            State<impl MarkdownConverter + Send + Sync + 'static, impl ContentFinder + Send + Sync>,
+        >,
     >,
 ) -> tide::Result {
     let state = req.state();

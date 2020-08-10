@@ -32,10 +32,12 @@ in any folder to start the server there.
 #### Options
 ```
 USAGE:
-    rs-readme [OPTIONS]
+    rs-readme [FLAGS] [OPTIONS]
 
 FLAGS:
         --help       Prints help information
+    -o, --offline    Whether to run in offline mode, using a built in markdown converter. May not be 100% accurate to
+                     GitHub
     -V, --version    Prints version information
 
 OPTIONS:
@@ -52,3 +54,4 @@ OPTIONS:
 - [ ] Testing on multiple platforms
 - [ ] Building for multiple platforms and hosting the binaries somewhere (probably github)
 - [x] Figure out why checkboxes don't render
+- [x] Offline rendering
