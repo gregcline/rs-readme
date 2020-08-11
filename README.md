@@ -36,8 +36,6 @@ USAGE:
 
 FLAGS:
         --help       Prints help information
-    -o, --offline    Whether to run in offline mode, using a built in markdown converter. May not be 100% accurate to
-                     GitHub
     -V, --version    Prints version information
 
 OPTIONS:
@@ -50,8 +48,9 @@ OPTIONS:
 ### Todos (maybe)
 - [x] Add a real CLI
 - [ ] Better error messages
-- [ ] Auto reloading on file save
+- [x] Auto reloading on file save
 - [ ] Testing on multiple platforms
 - [ ] Building for multiple platforms and hosting the binaries somewhere (probably github)
 - [x] Figure out why checkboxes don't render
 - [x] Offline rendering
+- [ ] Add image serving to support embedded images

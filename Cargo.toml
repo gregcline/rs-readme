@@ -28,6 +28,10 @@ horrorshow = "0.8.3"
 http-types = "2.3.0"
 structopt = "0.3.12"
 pulldown-cmark = { version = "0.7.2", default-features = false }
+sha-1 = "0.9.1"
+generic-array = "0.14.3"
+serde_json = "1.0.57"
+
 
 [dev-dependencies]
 mockito = "0.23.3"

@@ -5,7 +5,9 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 
+use generic_array::{typenum::U20, GenericArray};
 use log::{error, warn};
+use sha1::{Digest, Sha1};
 
 /// The possible errors while finding some markdown content.
 ///
@@ -37,7 +39,7 @@ impl Error for ContentError {}
 /// Something that can find some markdown content given a resource identifier.
 pub trait ContentFinder {
     /// Given a resource identifier returns the markdown string it represents.
-    fn content_for(&self, resource: &str) -> Result<String, ContentError>;
+    fn content_for(&self, resource: &str) -> Result<(String, GenericArray<u8, U20>), ContentError>;
 }
 
 /// Implements [`ContentFinder`] based on a file folder.
@@ -58,7 +60,7 @@ impl FileFinder {
 
 impl ContentFinder for FileFinder {
     /// Returns the contents of the file located at the path in `resource`.
-    fn content_for(&self, resource: &str) -> Result<String, ContentError> {
+    fn content_for(&self, resource: &str) -> Result<(String, GenericArray<u8, U20>), ContentError> {
         let mut path = self.root.clone();
         path.push(resource);
 
@@ -89,7 +91,9 @@ impl ContentFinder for FileFinder {
             ContentError::CouldNotFetch(resource.to_string())
         })?;
 
-        Ok(contents)
+        let hash = Sha1::digest(&contents.as_bytes());
+
+        Ok((contents, hash))
     }
 }
 
@@ -101,11 +105,16 @@ mod test {
     fn finds_content_in_md() {
         let finder = FileFinder::new(PathBuf::from("./"));
 
-        let content_for_a = finder.content_for("test_dir/a.md");
-        let content_for_b = finder.content_for("test_dir/b.md");
+        let (content_for_a, hash_for_a) = finder.content_for("test_dir/a.md").unwrap();
+        let (content_for_b, hash_for_b) = finder.content_for("test_dir/b.md").unwrap();
 
-        assert_eq!(content_for_a, Ok("# A's content\n".to_string()));
-        assert_eq!(content_for_b, Ok("- B's content\n".to_string()));
+        let a_expected = "# A's content\n".to_string();
+        let b_expected = "- B's content\n".to_string();
+
+        assert_eq!(content_for_a, a_expected);
+        assert_eq!(content_for_b, b_expected);
+        assert_eq!(hash_for_a, Sha1::digest(a_expected.as_bytes()));
+        assert_eq!(hash_for_b, Sha1::digest(b_expected.as_bytes()));
     }
 
     #[test]
