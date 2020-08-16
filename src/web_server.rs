@@ -9,26 +9,8 @@ use tide::{
 };
 
 use crate::content_finder::{ContentError, ContentFinder};
-use crate::markdown_converter::{Converter, MarkdownConverter, MarkdownError};
-use crate::offline_converter::OfflineConverter;
+use crate::converter::MarkdownConverter;
 use crate::static_files;
-
-/// Allows us to use either a GitHub API-based converter or an offline converter
-/// through pulldown cmark.
-pub enum Converters {
-    Github(Converter),
-    Offline(OfflineConverter),
-}
-
-#[async_trait]
-impl MarkdownConverter for Converters {
-    async fn convert_markdown(&self, md: &str) -> Result<String, MarkdownError> {
-        match self {
-            Converters::Github(converter) => converter.convert_markdown(&md).await,
-            Converters::Offline(offline) => offline.convert_markdown(&md).await,
-        }
-    }
-}
 
 /// The state necessary to process requests.
 ///

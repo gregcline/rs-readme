@@ -1,26 +1,7 @@
-use std::error::Error;
-use std::fmt;
-
 use async_trait::async_trait;
 use log::error;
 
-/// Represents an error from the markdown converter.
-#[derive(Debug, PartialEq)]
-pub enum MarkdownError {
-    ConverterUnavailable(String),
-}
-
-impl fmt::Display for MarkdownError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            MarkdownError::ConverterUnavailable(reason) => {
-                write!(f, "Could not convert\n{}", reason)
-            }
-        }
-    }
-}
-
-impl Error for MarkdownError {}
+use super::{MarkdownConverter, MarkdownError};
 
 /// The JSON body to send some text to GitHub's API to be converted from
 /// markdown to HTML.
@@ -37,22 +18,16 @@ struct MarkdownRequest {
     context: String,
 }
 
-/// Something that can convert a markdown string to HTML.
-#[async_trait]
-pub trait MarkdownConverter {
-    async fn convert_markdown(&self, md: &str) -> Result<String, MarkdownError>;
-}
-
 /// Can convert from markdown to HTML using the GitHub API.
-pub struct Converter {
+pub struct GitHubConverter {
     api_path: String,
     context: Option<String>,
 }
 
-impl Converter {
+impl GitHubConverter {
     /// Builds a new converter using the given GitHub API.
-    pub fn new(api_path: String, context: Option<String>) -> Converter {
-        Converter { api_path, context }
+    pub fn new(api_path: String, context: Option<String>) -> GitHubConverter {
+        GitHubConverter { api_path, context }
     }
 
     /// Builds the request body for github
@@ -74,7 +49,7 @@ impl Converter {
 }
 
 #[async_trait]
-impl MarkdownConverter for Converter {
+impl MarkdownConverter for GitHubConverter {
     /// Makes a request to the GitHub API and returns the resulting string.
     async fn convert_markdown(&self, md: &str) -> Result<String, MarkdownError> {
         let client = surf::Client::new();
@@ -120,7 +95,7 @@ mod test {
             .expect(1)
             .create();
 
-        let converter = Converter::new(mockito::server_url(), None);
+        let converter = GitHubConverter::new(mockito::server_url(), None);
         let html = converter.convert_markdown("# A thing!").await;
 
         m.assert();
@@ -135,7 +110,7 @@ mod test {
             .expect(1)
             .create();
 
-        let converter = Converter::new(mockito::server_url(), None);
+        let converter = GitHubConverter::new(mockito::server_url(), None);
         let html = converter.convert_markdown("# A thing!").await;
 
         m.assert();
@@ -157,7 +132,7 @@ mod test {
             .expect(1)
             .create();
 
-        let converter = Converter::new(
+        let converter = GitHubConverter::new(
             mockito::server_url(),
             Some("gregcline/rs-readme".to_string()),
         );

@@ -1,4 +1,4 @@
-use crate::markdown_converter::{MarkdownConverter, MarkdownError};
+use super::{MarkdownConverter, MarkdownError};
 use async_trait::async_trait;
 use pulldown_cmark::{html, Options, Parser};
 
