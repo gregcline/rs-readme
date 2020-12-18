@@ -53,4 +53,4 @@ OPTIONS:
 - [ ] Building for multiple platforms and hosting the binaries somewhere (probably github)
 - [x] Figure out why checkboxes don't render
 - [x] Offline rendering
-- [ ] Add image serving to support embedded images
+- [x] Add image serving to support embedded images

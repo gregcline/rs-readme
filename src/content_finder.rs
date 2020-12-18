@@ -109,9 +109,9 @@ mod test {
         let (content_for_b, hash_for_b) = finder.content_for("test_dir/b.md").unwrap();
 
         #[cfg(not(windows))]
-        let a_expected = "# A's content\n".to_string();
+        let a_expected = "# A's content\n![](./images/rust-logo.png)\n".to_string();
         #[cfg(windows)]
-        let a_expected = "# A's content\r\n".to_string();
+        let a_expected = "# A's content\r\n![](./images/rust-logo.png)\r\n".to_string();
         #[cfg(not(windows))]
         let b_expected = "- B's content\n".to_string();
         #[cfg(windows)]

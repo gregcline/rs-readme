@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use horrorshow::helper::doctype;
 use horrorshow::prelude::*;
-use http_types::mime;
+use http_types::{Body, mime};
+use mime_guess::{self, MimeGuess};
 use serde_json::json;
 use std::sync::Arc;
 use tide::{
@@ -197,7 +198,8 @@ async fn render_readme(
         .build())
 }
 
-/// Renders any given file path containing markdown as HTML.
+/// Renders any given file path, since the tool should only be used locally I assume people aren't hacking themselves.
+/// Please tell me if this is a terrible idea so I can fix it :)
 async fn render_markdown_path(
     req: Request<
         Arc<
@@ -210,7 +212,25 @@ async fn render_markdown_path(
     let path = req.url().path();
     let file = path.split('/').last().unwrap_or("rs-readme");
 
-    let (contents, _hash) = state.content_finder.content_for(&format!(".{}", path))?;
+    match MimeGuess::from_path(file).first_or_text_plain().type_() {
+        mime_guess::mime::IMAGE => return_file(&format!(".{}", path)).await,
+        _ => return_html(state, &format!(".{}", path)).await,
+    }
+}
+
+/// Returns static files for rendering things like images in markdown documents.
+async fn return_file(path: &str) -> tide::Result {
+    Ok(Response::builder(StatusCode::Ok)
+        .content_type(MimeGuess::from_path(path).first_or_text_plain().as_ref())
+        .body(Body::from_file(path).await?)
+        .build())
+}
+
+/// Converts markdown to HTML and returns it.
+async fn return_html(state: &Arc<State<impl MarkdownConverter + Send + Sync + 'static, impl ContentFinder + Send + Sync>>, path: &str) -> tide::Result {
+    let file = path.split('/').last().unwrap_or("rs-readme");
+
+    let (contents, _hash) = state.content_finder.content_for(path)?;
 
     let converted = state.markdown_converter.convert_markdown(&contents).await?;
 
