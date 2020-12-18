@@ -81,11 +81,18 @@ impl MarkdownConverter for Converter {
 
         let mut resp = client
             .post(format!("{}/markdown", &self.api_path))
-            .body_json(&self.build_body(md))
-            .map_err(|err| {
-                error!("{:?}", err);
-                MarkdownError::ConverterUnavailable("Error making request".to_string())
-            })?
+            .body(
+                http_types::Body::from_json(&self.build_body(md)).map_err(|err| {
+                    error!("{:?}", err);
+                    MarkdownError::ConverterUnavailable(
+                        "Error serializing request body".to_string(),
+                    )
+                })?,
+            )
+            // .map_err(|err| {
+            //     error!("{:?}", err);
+            //     MarkdownError::ConverterUnavailable("Error making request".to_string())
+            // })?
             .await
             .map_err(|err| {
                 error!("{:?}", err);
@@ -97,7 +104,7 @@ impl MarkdownConverter for Converter {
             .await
             .unwrap_or_else(|_| "Could not read response body from GitHub".to_string());
 
-        if resp.status().as_u16() >= 400 {
+        if resp.status().is_client_error() || resp.status().is_server_error() {
             Err(MarkdownError::ConverterUnavailable(body))
         } else {
             Ok(body)

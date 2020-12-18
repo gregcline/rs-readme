@@ -20,7 +20,7 @@ pub async fn octicons(
         Arc<State<impl MarkdownConverter + Send + Sync, impl ContentFinder + Send + Sync>>,
     >,
 ) -> tide::Result {
-    match req.param::<String>("file") {
+    match req.param("file") {
         Ok(path) if path.starts_with("octicons.css") => Ok(Response::builder(StatusCode::Ok)
             .body(OCTICON_CSS.to_string())
             .content_type(mime::CSS)
