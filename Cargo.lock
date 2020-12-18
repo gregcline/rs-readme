@@ -1584,6 +1584,8 @@ dependencies = [
  "http-service-mock",
  "http-types 2.9.0",
  "log",
+ "mime",
+ "mime_guess",
  "mockito",
  "pretty_assertions",
  "pretty_env_logger",

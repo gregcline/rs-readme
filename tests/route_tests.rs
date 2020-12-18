@@ -467,10 +467,7 @@ async fn static_content_returns_appropriate_files() {
         ));
         assert_eq!(res_mime, *mime, "path: {}", path);
 
-        let mut res_body = Vec::with_capacity(1);
-        res.take_body().read_to_end(&mut res_body).await.unwrap();
-
-        assert_eq!(&res_body, body, "path: {}", path);
+        assert_eq!(&res.body_bytes().await.expect("Could not fetch body bytes"), body, "path: {}", path);
     }
 }
 
@@ -499,4 +496,30 @@ async fn styles_returns_right_css() {
     let body = res.body_string().await.unwrap();
 
     assert_eq!(&body, include_str!("../static/style.css"));
+}
+
+#[async_std::test]
+async fn returns_image() {
+    // Setup
+    let state = State::new(MockConverter, MockFinder);
+    let app = build_app(Arc::new(state));
+
+    // Make request
+    let req = Request::new(
+        Method::Get,
+        Url::parse("http://localhost/test_dir/images/rust-logo.png").unwrap(),
+    );
+    let mut res: Response = app.respond(req).await.unwrap();
+
+    // Assert
+    let res_status = res.status();
+    assert_eq!(res_status, 200);
+
+    let mime = res
+        .content_type()
+        .expect("Couldn't get the content-type header");
+    assert_eq!(mime, mime::PNG);
+
+    let expected_content = include_bytes!("../test_dir/images/rust-logo.png");
+    assert_eq!(res.body_bytes().await.expect("Couldn't get body bytes"), expected_content);
 }
